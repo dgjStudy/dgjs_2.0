@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   Layout,
@@ -15,8 +15,9 @@ import {
   Typography,
   Breadcrumb,
   Descriptions,
-  Badge,
   message,
+  Spin,
+  Popconfirm,
 } from 'antd';
 import {
   DatabaseOutlined,
@@ -26,63 +27,12 @@ import {
   EyeOutlined,
   PlusOutlined,
   CheckCircleOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
+import { fetchDatasets, fetchDatasetDetail, uploadDatasetFile, deleteDataset } from './api/datasetApi';
 
-const { Header, Content, Sider } = Layout;
-const { Title, Text, Paragraph } = Typography;
-
-// Mock Datasets
-const MOCK_DATASETS = [
-  {
-    id: 'ds-001',
-    name: '2026년 3분기 공장별 에너지 사용량',
-    category: '에너지/환경',
-    rowCount: 1250,
-    columnCount: 8,
-    ownerId: 'user_admin',
-    orgId: 'org_hq',
-    createdAt: '2026-10-01 14:20:00',
-    description: '전국 5개 생산 공장의 시간대별 전력 및 가스 소비 데이터',
-    columns: ['공장코드', '측정일시', '전력사용량(kWh)', '가스사용량(m³)', '피크전력', '가동률(%)', '담당자', '상태'],
-    sampleData: [
-      { key: '1', 공장코드: 'FACT-SEOUL-01', 측정일시: '2026-10-01 09:00', '전력사용량(kWh)': 420.5, '가스사용량(m³)': 112.0, 피크전력: 450, '가동률(%)': 92, 담당자: '김철수', 상태: '정상' },
-      { key: '2', 공장코드: 'FACT-BUSAN-02', 측정일시: '2026-10-01 09:00', '전력사용량(kWh)': 580.2, '가스사용량(m³)': 205.4, 피크전력: 600, '가동률(%)': 88, 담당자: '이영희', 상태: '주의' },
-      { key: '3', 공장코드: 'FACT-INCHEON-01', 측정일시: '2026-10-01 09:00', '전력사용량(kWh)': 310.8, '가스사용량(m³)': 95.1, 피크전력: 350, '가동률(%)': 95, 담당자: '박민수', 상태: '정상' },
-      { key: '4', 공장코드: 'FACT-DAEJEON-03', 측정일시: '2026-10-01 09:00', '전력사용량(kWh)': 290.0, '가스사용량(m³)': 80.3, 피크전력: 300, '가동률(%)': 75, 담당자: '정수진', 상태: '점검필요' },
-    ],
-  },
-  {
-    id: 'ds-002',
-    name: '전사 부서별 설비 유지보수 이력',
-    category: '설비관리',
-    rowCount: 840,
-    columnCount: 6,
-    ownerId: 'user_maint',
-    orgId: 'org_ops',
-    createdAt: '2026-09-28 10:15:00',
-    description: '생산라인 주요 설비의 정기 점검 및 수리 이력 메타데이터',
-    columns: ['설비ID', '설비명', '점검일자', '점검유형', '비용(원)', '조치결과'],
-    sampleData: [
-      { key: '1', 설비ID: 'EQ-CNC-09', 설비명: '고속 CNC 가공기 #9', 점검일자: '2026-09-25', 점검유형: '정기점검', '비용(원)': 150000, 조치결과: '부품 교체완료' },
-      { key: '2', 설비ID: 'EQ-ROBOT-02', 설비명: '다축 용접 로봇 #2', 점검일자: '2026-09-26', 점검유형: '긴급수리', '비용(원)': 450000, 조치결과: '센서 재설정' },
-    ],
-  },
-  {
-    id: 'ds-003',
-    name: '원자재 공급망 입고 검사 데이터',
-    category: '품질관리',
-    rowCount: 3400,
-    columnCount: 7,
-    ownerId: 'user_qa',
-    orgId: 'org_qa',
-    createdAt: '2026-09-20 16:45:00',
-    description: '협력업체별 입고 원자재 불량률 및 품질 검사 수치',
-    columns: ['LOT번호', '공급사', '품목명', '입고수량', '합격수량', '불량률(%)', '검사자'],
-    sampleData: [
-      { key: '1', LOT번호: 'LOT-20260920-A', 공급사: '(주)한국알루미늄', 품목명: 'AL-6061 판재', 입고수량: 5000, 합격수량: 4980, '불량률(%)': 0.4, 검사자: '최동현' },
-    ],
-  },
-];
+const { Header, Content } = Layout;
+const { Title, Text } = Typography;
 
 // App Layout Wrapper
 const MainLayout = ({ children }) => {
@@ -123,6 +73,34 @@ const MainLayout = ({ children }) => {
 // 1. /data - Dataset List View
 const DataListPage = () => {
   const navigate = useNavigate();
+  const [datasets, setDatasets] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchDatasets();
+      setDatasets(data);
+    } catch (err) {
+      message.error(err.message || '데이터셋 목록 조회에 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteDataset(id);
+      message.success('데이터셋이 삭제되었습니다.');
+      loadData();
+    } catch (err) {
+      message.error(err.message || '삭제 중 오류가 발생했습니다.');
+    }
+  };
 
   const columns = [
     {
@@ -140,43 +118,57 @@ const DataListPage = () => {
       title: '분류',
       dataIndex: 'category',
       key: 'category',
-      render: (cat) => <Tag color="blue">{cat}</Tag>,
+      render: (cat) => <Tag color="blue">{cat || '기타'}</Tag>,
     },
     {
       title: '행 수',
       dataIndex: 'rowCount',
       key: 'rowCount',
-      render: (val) => `${val.toLocaleString()} 행`,
+      render: (val) => `${(val || 0).toLocaleString()} 행`,
     },
     {
       title: '열 수',
       dataIndex: 'columnCount',
       key: 'columnCount',
-      render: (val) => `${val} 개`,
+      render: (val) => `${val || 0} 개`,
     },
     {
       title: '등록일시',
       dataIndex: 'createdAt',
       key: 'createdAt',
+      render: (val) => (val ? new Date(val).toLocaleString() : '-'),
     },
     {
       title: '소속 / 소유자',
       key: 'owner',
-      render: (_, record) => `${record.orgId} / ${record.ownerId}`,
+      render: (_, record) => `${record.orgId || '-'} / ${record.ownerId || '-'}`,
     },
     {
       title: '작업',
       key: 'action',
       render: (_, record) => (
-        <Button
-          type="primary"
-          ghost
-          size="small"
-          icon={<EyeOutlined />}
-          onClick={() => navigate(`/data/${record.id}`)}
-        >
-          상세 조회
-        </Button>
+        <Space>
+          <Button
+            type="primary"
+            ghost
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => navigate(`/data/${record.id}`)}
+          >
+            상세 조회
+          </Button>
+          <Popconfirm
+            title="데이터셋 삭제"
+            description="이 데이터셋과 적재된 데이터를 삭제하시겠습니까?"
+            onConfirm={() => handleDelete(record.id)}
+            okText="삭제"
+            cancelText="취소"
+          >
+            <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+              삭제
+            </Button>
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -197,7 +189,13 @@ const DataListPage = () => {
           </div>
         }
       >
-        <Table columns={columns} dataSource={MOCK_DATASETS} rowKey="id" pagination={{ pageSize: 10 }} />
+        <Table
+          columns={columns}
+          dataSource={datasets}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 10 }}
+        />
       </Card>
     </Space>
   );
@@ -207,13 +205,46 @@ const DataListPage = () => {
 const DataDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const dataset = MOCK_DATASETS.find((d) => d.id === id) || MOCK_DATASETS[0];
+  useEffect(() => {
+    const loadDetail = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchDatasetDetail(id);
+        setDetail(data);
+      } catch (err) {
+        message.error(err.message || '상세 정보 조회 실패');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadDetail();
+  }, [id]);
 
-  const gridColumns = dataset.columns.map((col) => ({
-    title: col,
-    dataIndex: col,
-    key: col,
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '100px 0' }}>
+        <Spin size="large" tip="데이터셋 정보를 불러오는 중..." />
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <Card>
+        <Typography.Text type="danger">존재하지 않거나 삭제된 데이터셋입니다.</Typography.Text>
+        <br />
+        <Button onClick={() => navigate('/data')} style={{ marginTop: 16 }}>목록으로 돌아가기</Button>
+      </Card>
+    );
+  }
+
+  const gridColumns = (detail.columns || []).map((col) => ({
+    title: col.title,
+    dataIndex: col.key,
+    key: col.key,
   }));
 
   return (
@@ -221,7 +252,7 @@ const DataDetailPage = () => {
       <Breadcrumb
         items={[
           { title: <a onClick={() => navigate('/data')}>데이터셋 목록</a> },
-          { title: dataset.name },
+          { title: detail.name },
         ]}
       />
 
@@ -231,32 +262,32 @@ const DataDetailPage = () => {
             <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/data')} style={{ marginBottom: 12 }}>
               목록으로 돌아가기
             </Button>
-            <Title level={3} style={{ margin: 0 }}>{dataset.name}</Title>
-            <Text type="secondary">{dataset.description}</Text>
+            <Title level={3} style={{ margin: 0 }}>{detail.name}</Title>
+            <Text type="secondary">{detail.description || '등록된 설명이 없습니다.'}</Text>
           </div>
           <Space>
             <Tag color="green">메타데이터 정상</Tag>
-            <Tag color="purple">ID: {dataset.id}</Tag>
+            <Tag color="purple">ID: {detail.id}</Tag>
           </Space>
         </div>
 
         <Descriptions bordered size="small" column={{ xs: 1, sm: 2, md: 4 }}>
-          <Descriptions.Item label="카테고리">{dataset.category}</Descriptions.Item>
-          <Descriptions.Item label="총 레코드 수">{dataset.rowCount.toLocaleString()} 행</Descriptions.Item>
-          <Descriptions.Item label="컬럼 수">{dataset.columnCount} 개</Descriptions.Item>
-          <Descriptions.Item label="등록일시">{dataset.createdAt}</Descriptions.Item>
-          <Descriptions.Item label="소속 조직(org_id)">{dataset.orgId}</Descriptions.Item>
-          <Descriptions.Item label="소유자(owner_id)">{dataset.ownerId}</Descriptions.Item>
+          <Descriptions.Item label="카테고리">{detail.category}</Descriptions.Item>
+          <Descriptions.Item label="총 레코드 수">{detail.rows ? detail.rows.length.toLocaleString() : 0} 행</Descriptions.Item>
+          <Descriptions.Item label="컬럼 수">{detail.columns ? detail.columns.length : 0} 개</Descriptions.Item>
+          <Descriptions.Item label="등록일시">{detail.createdAt ? new Date(detail.createdAt).toLocaleString() : '-'}</Descriptions.Item>
+          <Descriptions.Item label="소속 조직(org_id)">{detail.orgId}</Descriptions.Item>
+          <Descriptions.Item label="소유자(owner_id)">{detail.ownerId}</Descriptions.Item>
         </Descriptions>
       </Card>
 
       <Card title={<Space><FileExcelOutlined /><span>데이터 상세 그리드 뷰</span></Space>}>
         <Table
           columns={gridColumns}
-          dataSource={dataset.sampleData}
+          dataSource={detail.rows || []}
           rowKey="key"
           bordered
-          pagination={{ pageSize: 5 }}
+          pagination={{ pageSize: 10 }}
         />
       </Card>
     </Space>
@@ -268,11 +299,32 @@ const DataUploadPage = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const [fileList, setFileList] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (values) => {
-    message.success('데이터셋이 성공적으로 적재 정의되었습니다!');
-    console.log('업로드 파라미터:', values, fileList);
-    navigate('/data');
+  const handleSubmit = async (values) => {
+    if (fileList.length === 0) {
+      message.error('엑셀 또는 CSV 데이터 파일을 첨부해 주세요.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', fileList[0].originFileObj || fileList[0]);
+      formData.append('name', values.name);
+      formData.append('description', values.description || '');
+      formData.append('category', values.category || '기타');
+      formData.append('ownerId', values.ownerId || 'user_admin');
+      formData.append('orgId', values.orgId || 'org_hq');
+
+      const res = await uploadDatasetFile(formData);
+      message.success(res.message || '데이터셋이 성공적으로 적재되었습니다!');
+      navigate('/data');
+    } catch (err) {
+      message.error(err.message || '업로드 처리 중 오류가 발생했습니다.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -337,7 +389,7 @@ const DataUploadPage = () => {
 
           <Form.Item style={{ marginTop: 24 }}>
             <Space>
-              <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} size="large">
+              <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} size="large" loading={submitting}>
                 적재 및 스키마 저장
               </Button>
               <Button size="large" onClick={() => navigate('/data')}>
