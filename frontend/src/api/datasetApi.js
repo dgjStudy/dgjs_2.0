@@ -16,6 +16,38 @@ export const fetchDatasetDetail = async (id) => {
   return response.json();
 };
 
+export const previewDatasetFile = async (formData) => {
+  const response = await fetch(`${API_BASE_URL}/preview`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.warnings ? errorData.warnings.join('\n') : '엑셀 파싱 및 검증 중 오류가 발생했습니다.');
+  }
+  return response.json();
+};
+
+export const uploadDatasetAsync = async (formData) => {
+  const response = await fetch(`${API_BASE_URL}/upload-async`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || '비동기 업로드 처리에 실패했습니다.');
+  }
+  return response.json();
+};
+
+export const fetchTaskProgress = async (taskId) => {
+  const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/progress`);
+  if (!response.ok) {
+    throw new Error('진행 상태를 조회하지 못했습니다.');
+  }
+  return response.json();
+};
+
 export const uploadDatasetFile = async (formData) => {
   const response = await fetch(`${API_BASE_URL}/upload`, {
     method: 'POST',
@@ -37,3 +69,4 @@ export const deleteDataset = async (id) => {
   }
   return response.json();
 };
+

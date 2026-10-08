@@ -18,6 +18,10 @@ import {
   message,
   Spin,
   Popconfirm,
+  Steps,
+  Progress,
+  Alert,
+  Divider,
 } from 'antd';
 import {
   DatabaseOutlined,
@@ -29,7 +33,16 @@ import {
   CheckCircleOutlined,
   DeleteOutlined,
 } from '@ant-design/icons';
-import { fetchDatasets, fetchDatasetDetail, uploadDatasetFile, deleteDataset } from './api/datasetApi';
+import {
+  fetchDatasets,
+  fetchDatasetDetail,
+  uploadDatasetFile,
+  deleteDataset,
+  previewDatasetFile,
+  uploadDatasetAsync,
+  fetchTaskProgress,
+} from './api/datasetApi';
+
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -294,110 +307,409 @@ const DataDetailPage = () => {
   );
 };
 
-// 3. /upload - Data Upload & Schema Definition Page
+// 3. /upload - Data Upload & Dynamic Schema Definition & Async Progress Page
 const DataUploadPage = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
+  const [currentStep, setCurrentStep] = useState(0);
   const [fileList, setFileList] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [previewData, setPreviewData] = useState(null);
+  const [columnsSchema, setColumnsSchema] = useState([]);
 
-  const handleSubmit = async (values) => {
-    if (fileList.length === 0) {
-      message.error('엑셀 또는 CSV 데이터 파일을 첨부해 주세요.');
-      return;
-    }
+  // Async task states
+  const [uploadTaskId, setUploadTaskId] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatusMsg, setUploadStatusMsg] = useState('적재 준비 중...');
+  const [taskStatus, setTaskStatus] = useState('IDLE'); // IDLE, PROCESSING, COMPLETED, FAILED
 
-    setSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', fileList[0].originFileObj || fileList[0]);
-      formData.append('name', values.name);
-      formData.append('description', values.description || '');
-      formData.append('category', values.category || '기타');
-      formData.append('ownerId', values.ownerId || 'user_admin');
-      formData.append('orgId', values.orgId || 'org_hq');
+  // File Upload -> Preview API Call
+  const handleFileChange = async ({ fileList }) => {
+    setFileList(fileList);
+    if (fileList.length > 0) {
+      const rawFile = fileList[0].originFileObj || fileList[0];
+      setParsing(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', rawFile);
+        const res = await previewDatasetFile(formData);
+        setPreviewData(res);
+        setColumnsSchema(res.columns || []);
 
-      const res = await uploadDatasetFile(formData);
-      message.success(res.message || '데이터셋이 성공적으로 적재되었습니다!');
-      navigate('/data');
-    } catch (err) {
-      message.error(err.message || '업로드 처리 중 오류가 발생했습니다.');
-    } finally {
-      setSubmitting(false);
+        // 파일명에서 확장자를 제외한 명칭을 기본 데이터셋 이름으로 설정
+        const fileNameWithoutExt = rawFile.name ? rawFile.name.replace(/\.[^/.]+$/, '') : '';
+        form.setFieldsValue({
+          name: form.getFieldValue('name') || fileNameWithoutExt,
+        });
+
+        if (!res.valid) {
+          message.warning('엑셀 파일 구조에 적재 주의/불가 사항이 있습니다. 안내 메시지를 확인해 주세요.');
+        } else {
+          message.success('엑셀 미리보기 및 타입 자동 추정이 완료되었습니다.');
+        }
+        setCurrentStep(1);
+      } catch (err) {
+        message.error(err.message || '파일 파싱 실패');
+      } finally {
+        setParsing(false);
+      }
+    } else {
+      setPreviewData(null);
+      setColumnsSchema([]);
+      setCurrentStep(0);
     }
   };
+
+  const handleColumnNameChange = (columnKey, newTitle) => {
+    setColumnsSchema((prev) =>
+      prev.map((col) => (col.columnKey === columnKey ? { ...col, columnName: newTitle } : col))
+    );
+  };
+
+  const handleDataTypeChange = (columnKey, newType) => {
+    setColumnsSchema((prev) =>
+      prev.map((col) => (col.columnKey === columnKey ? { ...col, dataType: newType } : col))
+    );
+  };
+
+  // Start Async Upload
+  const handleStartAsyncUpload = async () => {
+    try {
+      const values = await form.validateFields();
+      if (fileList.length === 0) {
+        message.error('첨부된 파일이 없습니다.');
+        return;
+      }
+
+      const rawFile = fileList[0].originFileObj || fileList[0];
+      const formData = new FormData();
+      formData.append('file', rawFile);
+
+      const metadataPayload = {
+        name: values.name,
+        description: values.description || '',
+        category: values.category || '기타',
+        ownerId: values.ownerId || 'user_admin',
+        orgId: values.orgId || 'org_hq',
+        columns: columnsSchema,
+      };
+
+      formData.append('metadata', JSON.stringify(metadataPayload));
+
+      const res = await uploadDatasetAsync(formData);
+      setUploadTaskId(res.taskId);
+      setTaskStatus('PROCESSING');
+      setCurrentStep(2);
+    } catch (err) {
+      message.error(err.message || '비동기 적재 요청에 실패했습니다.');
+    }
+  };
+
+  // Polling task progress
+  useEffect(() => {
+    let timer = null;
+    if (uploadTaskId && taskStatus === 'PROCESSING') {
+      timer = setInterval(async () => {
+        try {
+          const res = await fetchTaskProgress(uploadTaskId);
+          setUploadProgress(res.progress || 0);
+          setUploadStatusMsg(res.message || '진행 중...');
+
+          if (res.status === 'COMPLETED') {
+            setTaskStatus('COMPLETED');
+            clearInterval(timer);
+            message.success('데이터 적재가 완전히 완료되었습니다!');
+            setTimeout(() => {
+              navigate(`/data/${res.datasetId}`);
+            }, 1500);
+          } else if (res.status === 'FAILED') {
+            setTaskStatus('FAILED');
+            clearInterval(timer);
+            message.error(res.message || '적재 중 오류가 발생했습니다.');
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [uploadTaskId, taskStatus, navigate]);
+
+  const schemaColumns = [
+    {
+      title: '컬럼 키',
+      dataIndex: 'columnKey',
+      key: 'columnKey',
+      width: 120,
+      render: (text) => <Text code>{text}</Text>,
+    },
+    {
+      title: '컬럼명 (표시 이름)',
+      dataIndex: 'columnName',
+      key: 'columnName',
+      render: (text, record) => (
+        <Input
+          value={text}
+          onChange={(e) => handleColumnNameChange(record.columnKey, e.target.value)}
+        />
+      ),
+    },
+    {
+      title: '데이터 타입 설정',
+      dataIndex: 'dataType',
+      key: 'dataType',
+      width: 180,
+      render: (text, record) => (
+        <Select
+          value={text}
+          style={{ width: '100%' }}
+          onChange={(val) => handleDataTypeChange(record.columnKey, val)}
+          options={[
+            { value: 'STRING', label: '문자형 (STRING)' },
+            { value: 'NUMBER', label: '숫자형 (NUMBER)' },
+            { value: 'DATE', label: '날짜형 (DATE)' },
+            { value: 'BOOLEAN', label: '불리언 (BOOLEAN)' },
+          ]}
+        />
+      ),
+    },
+    {
+      title: '정렬 순서',
+      dataIndex: 'sortOrder',
+      key: 'sortOrder',
+      width: 100,
+      render: (val) => val + 1,
+    },
+  ];
+
+  const previewDataColumns = (columnsSchema || []).map((col) => ({
+    title: col.columnName,
+    dataIndex: col.columnKey,
+    key: col.columnKey,
+  }));
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <Breadcrumb items={[{ title: '홈' }, { title: '데이터 적재 및 스키마 정의' }]} />
 
-      <Card title={<Title level={4} style={{ margin: 0 }}>신규 데이터 적재 및 스키마 정의</Title>}>
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSubmit}
-          initialValues={{ category: '에너지/환경', ownerId: 'user_admin', orgId: 'org_hq' }}
-        >
-          <Form.Item
-            name="name"
-            label="데이터셋 명칭"
-            rules={[{ required: true, message: '데이터셋 이름을 입력하세요.' }]}
-          >
-            <Input placeholder="예: 2026년 3분기 공장별 에너지 사용량" />
-          </Form.Item>
+      <Card title={<Title level={4} style={{ margin: 0 }}>신규 데이터 적재 및 동적 스키마 정의</Title>}>
+        <Steps
+          current={currentStep}
+          style={{ marginBottom: 32 }}
+          items={[
+            { title: '파일 업로드 & 미리보기' },
+            { title: '동적 스키마 정의 & 유효성 검증' },
+            { title: '비동기 적재 & 진행률' },
+          ]}
+        />
 
-          <Form.Item name="description" label="데이터셋 설명">
-            <Input.TextArea rows={3} placeholder="데이터셋의 목적 및 수집 경로 설명" />
-          </Form.Item>
-
-          <Space size="large" style={{ display: 'flex' }}>
-            <Form.Item name="category" label="분류 카테고리" style={{ width: 240 }}>
-              <Select
-                options={[
-                  { value: '에너지/환경', label: '에너지/환경' },
-                  { value: '설비관리', label: '설비관리' },
-                  { value: '품질관리', label: '품질관리' },
-                  { value: '생산실적', label: '생산실적' },
-                ]}
-              />
-            </Form.Item>
-
-            <Form.Item name="orgId" label="소속 조직 (org_id)" style={{ width: 200 }}>
-              <Input disabled />
-            </Form.Item>
-
-            <Form.Item name="ownerId" label="등록자 (owner_id)" style={{ width: 200 }}>
-              <Input disabled />
-            </Form.Item>
-          </Space>
-
-          <Form.Item label="엑셀/CSV 데이터 파일 첨부" required>
-            <Upload.Dragger
-              beforeUpload={() => false}
-              fileList={fileList}
-              onChange={({ fileList }) => setFileList(fileList)}
-              maxCount={1}
-              accept=".xlsx,.xls,.csv"
+        {currentStep === 0 && (
+          <Spin spinning={parsing} tip="엑셀 파일 분석 및 미리보기 파싱 중...">
+            <Form
+              form={form}
+              layout="vertical"
+              initialValues={{ category: '에너지/환경', ownerId: 'user_admin', orgId: 'org_hq' }}
             >
-              <p className="ant-upload-drag-icon">
-                <FileExcelOutlined style={{ fontSize: 36, color: '#1890ff' }} />
-              </p>
-              <p className="ant-upload-text">클릭하거나 엑셀/CSV 파일을 이곳으로 드래그하세요.</p>
-              <p className="ant-upload-hint">1,000행 이상의 데이터도 메타데이터 파싱 후 비동기 적재 처리됩니다.</p>
-            </Upload.Dragger>
-          </Form.Item>
+              <Form.Item
+                name="name"
+                label="데이터셋 명칭"
+                rules={[{ required: true, message: '데이터셋 이름을 입력하세요.' }]}
+              >
+                <Input placeholder="예: 2026년 3분기 공장별 에너지 사용량" />
+              </Form.Item>
 
-          <Form.Item style={{ marginTop: 24 }}>
+              <Form.Item name="description" label="데이터셋 설명">
+                <Input.TextArea rows={2} placeholder="데이터셋의 목적 및 수집 경로 설명" />
+              </Form.Item>
+
+              <Space size="large" style={{ display: 'flex' }}>
+                <Form.Item name="category" label="분류 카테고리" style={{ width: 240 }}>
+                  <Select
+                    options={[
+                      { value: '에너지/환경', label: '에너지/환경' },
+                      { value: '설비관리', label: '설비관리' },
+                      { value: '품질관리', label: '품질관리' },
+                      { value: '생산실적', label: '생산실적' },
+                    ]}
+                  />
+                </Form.Item>
+
+                <Form.Item name="orgId" label="소속 조직 (org_id)" style={{ width: 200 }}>
+                  <Input disabled />
+                </Form.Item>
+
+                <Form.Item name="ownerId" label="등록자 (owner_id)" style={{ width: 200 }}>
+                  <Input disabled />
+                </Form.Item>
+              </Space>
+
+              <Form.Item label="엑셀/CSV 데이터 파일 첨부" required>
+                <Upload.Dragger
+                  beforeUpload={() => false}
+                  fileList={fileList}
+                  onChange={handleFileChange}
+                  maxCount={1}
+                  accept=".xlsx,.xls,.csv"
+                >
+                  <p className="ant-upload-drag-icon">
+                    <FileExcelOutlined style={{ fontSize: 36, color: '#1890ff' }} />
+                  </p>
+                  <p className="ant-upload-text">클릭하거나 엑셀/CSV 파일을 이곳으로 드래그하세요.</p>
+                  <p className="ant-upload-hint">파일 첨부 즉시 하위 샘플 10행 파싱 및 컬럼 스키마가 자동 생성됩니다.</p>
+                </Upload.Dragger>
+              </Form.Item>
+            </Form>
+          </Spin>
+        )}
+
+        {currentStep === 1 && (
+          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            {previewData && !previewData.valid ? (
+              <Alert
+                message="DB 적재 제한 / 데이터 구조 주의사항"
+                description={
+                  <div>
+                    {previewData.warnings && previewData.warnings.map((w, idx) => (
+                      <div key={idx}>• {w}</div>
+                    ))}
+                    <div style={{ marginTop: 8, fontWeight: 'bold' }}>
+                      * 데이터베이스 정형 테이블 저장이 불가능한 구조이므로 적재 진행이 제한됩니다. 파일을 수정 후 다시 시도해 주세요.
+                    </div>
+                  </div>
+                }
+                type="error"
+                showIcon
+              />
+            ) : previewData && previewData.warnings && previewData.warnings.length > 0 ? (
+              <Alert
+                message="자동 스키마 보정 안내"
+                description={
+                  <div>
+                    {previewData.warnings.map((w, idx) => (
+                      <div key={idx}>• {w}</div>
+                    ))}
+                  </div>
+                }
+                type="warning"
+                showIcon
+              />
+            ) : (
+              <Alert
+                message="정형 DB 적재가 가능한 파일 구조입니다."
+                description="추정된 컬럼 데이터 타입을 검토 및 수정하신 후 [비동기 적재 시작]을 클릭하세요."
+                type="success"
+                showIcon
+              />
+            )}
+
+            <Card size="small" title={<Space><PlusOutlined /><span>데이터셋 기본 정보 및 컬럼 스키마 정의</span></Space>}>
+              <Form
+                form={form}
+                layout="vertical"
+                initialValues={{ category: '에너지/환경', ownerId: 'user_admin', orgId: 'org_hq' }}
+              >
+                <Form.Item
+                  name="name"
+                  label="데이터셋 명칭"
+                  rules={[{ required: true, message: '데이터셋 이름을 입력해주세요.' }]}
+                >
+                  <Input placeholder="예: 2026년 3분기 공장별 에너지 사용량" />
+                </Form.Item>
+
+                <Form.Item name="description" label="데이터셋 설명">
+                  <Input.TextArea rows={2} placeholder="데이터셋의 목적 및 수집 경로 설명" />
+                </Form.Item>
+
+                <Space size="large" style={{ display: 'flex' }}>
+                  <Form.Item name="category" label="분류 카테고리" style={{ width: 240 }}>
+                    <Select
+                      options={[
+                        { value: '에너지/환경', label: '에너지/환경' },
+                        { value: '설비관리', label: '설비관리' },
+                        { value: '품질관리', label: '품질관리' },
+                        { value: '생산실적', label: '생산실적' },
+                      ]}
+                    />
+                  </Form.Item>
+
+                  <Form.Item name="orgId" label="소속 조직 (org_id)" style={{ width: 200 }}>
+                    <Input disabled />
+                  </Form.Item>
+
+                  <Form.Item name="ownerId" label="등록자 (owner_id)" style={{ width: 200 }}>
+                    <Input disabled />
+                  </Form.Item>
+                </Space>
+              </Form>
+
+              <Divider style={{ margin: '16px 0' }} />
+
+              <Table
+                columns={schemaColumns}
+                dataSource={columnsSchema}
+                rowKey="columnKey"
+                pagination={false}
+                size="small"
+              />
+            </Card>
+
+            <Card size="small" title={<Space><EyeOutlined /><span>데이터 파싱 샘플 미리보기 (상위 {previewData?.totalPreviewRows || 0}행)</span></Space>}>
+              <Table
+                columns={previewDataColumns}
+                dataSource={previewData?.previewRows || []}
+                rowKey="key"
+                pagination={false}
+                size="small"
+                scroll={{ x: 'max-content' }}
+              />
+            </Card>
+
             <Space>
-              <Button type="primary" htmlType="submit" icon={<CheckCircleOutlined />} size="large" loading={submitting}>
-                적재 및 스키마 저장
+              <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                size="large"
+                disabled={previewData && !previewData.valid}
+                onClick={handleStartAsyncUpload}
+              >
+                비동기 적재 시작
               </Button>
-              <Button size="large" onClick={() => navigate('/data')}>
-                취소
+              <Button size="large" onClick={() => setCurrentStep(0)}>
+                이전 단계 (파일 재선택)
               </Button>
             </Space>
-          </Form.Item>
-        </Form>
+          </Space>
+        )}
+
+        {currentStep === 2 && (
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <Title level={4}>{uploadStatusMsg}</Title>
+            <Progress
+              type="circle"
+              percent={uploadProgress}
+              status={taskStatus === 'FAILED' ? 'exception' : uploadProgress === 100 ? 'success' : 'active'}
+              size={140}
+              style={{ margin: '24px 0' }}
+            />
+            <div>
+              {taskStatus === 'PROCESSING' && (
+                <Text type="secondary">서버에서 비동기로 대용량 엑셀 행을 읽어 DB에 적재 중입니다. 화면을 이탈해도 백그라운드에서 계속 진행됩니다.</Text>
+              )}
+              {taskStatus === 'COMPLETED' && (
+                <Text type="success">적재 완료! 잠시 후 데이터 상세 화면으로 이동합니다.</Text>
+              )}
+              {taskStatus === 'FAILED' && (
+                <div>
+                  <Text type="danger">적재 실패 사유: {uploadStatusMsg}</Text>
+                  <br />
+                  <Button style={{ marginTop: 16 }} onClick={() => setCurrentStep(1)}>스키마 다시 확인</Button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Card>
     </Space>
   );
@@ -417,3 +729,4 @@ export default function App() {
     </BrowserRouter>
   );
 }
+
