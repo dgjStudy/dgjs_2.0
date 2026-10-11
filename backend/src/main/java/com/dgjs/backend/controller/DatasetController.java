@@ -33,6 +33,14 @@ public class DatasetController {
         return ResponseEntity.ok(datasetService.getDatasetDetail(id));
     }
 
+    @GetMapping("/datasets/{id}/rows")
+    public ResponseEntity<DatasetDto.PagedRowsResponse> getDatasetRows(
+            @PathVariable("id") Long id,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size) {
+        return ResponseEntity.ok(datasetService.getDatasetRowsPaged(id, page, size));
+    }
+
     @PostMapping("/preview")
     public ResponseEntity<?> previewDataset(@RequestPart("file") MultipartFile file) {
         try {
@@ -85,11 +93,64 @@ public class DatasetController {
         }
     }
 
+    @PostMapping("/datasets/manual")
+    public ResponseEntity<?> createManualDataset(@RequestBody DatasetDto.ManualCreateRequest request) {
+        try {
+            Long datasetId = datasetService.createManualDataset(request);
+            return ResponseEntity.ok(Map.of("success", true, "datasetId", datasetId, "message", "데이터셋 스키마가 성공적으로 생성되었습니다."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/datasets/{id}")
+    public ResponseEntity<?> updateDatasetMeta(@PathVariable("id") Long id, @RequestBody DatasetDto.MetaUpdateRequest request) {
+        try {
+            datasetService.updateDatasetMeta(id, request);
+            return ResponseEntity.ok(Map.of("success", true, "message", "데이터셋 정보가 수정되었습니다."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
     @DeleteMapping("/datasets/{id}")
     public ResponseEntity<?> deleteDataset(@PathVariable("id") Long id) {
         try {
             datasetService.deleteDataset(id);
             return ResponseEntity.ok(Map.of("success", true, "message", "데이터셋이 삭제되었습니다."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/datasets/{id}/rows")
+    public ResponseEntity<?> addRow(@PathVariable("id") Long id, @RequestBody Map<String, Object> rowData) {
+        try {
+            Long rowId = datasetService.addRow(id, rowData);
+            return ResponseEntity.ok(Map.of("success", true, "rowId", rowId, "message", "데이터 행이 성공적으로 추가되었습니다."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/datasets/{id}/rows/{rowId}")
+    public ResponseEntity<?> updateRow(
+            @PathVariable("id") Long id,
+            @PathVariable("rowId") Long rowId,
+            @RequestBody Map<String, Object> rowData) {
+        try {
+            datasetService.updateRow(id, rowId, rowData);
+            return ResponseEntity.ok(Map.of("success", true, "message", "데이터 행이 수정되었습니다."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/datasets/{id}/rows/{rowId}")
+    public ResponseEntity<?> deleteRow(@PathVariable("id") Long id, @PathVariable("rowId") Long rowId) {
+        try {
+            datasetService.deleteRow(id, rowId);
+            return ResponseEntity.ok(Map.of("success", true, "message", "데이터 행이 삭제되었습니다."));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }

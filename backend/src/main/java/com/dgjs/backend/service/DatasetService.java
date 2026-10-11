@@ -12,12 +12,16 @@ import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.DatasetRowRepository;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.InputStream;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -90,7 +94,35 @@ public class DatasetService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
+    public DatasetDto.PagedRowsResponse getDatasetRowsPaged(Long datasetId, int page, int size) {
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.max(1, size));
+        Page<DatasetRow> rowPage = rowRepository.findByDatasetIdOrderByRowIndexAsc(datasetId, pageable);
+
+        List<Map<String, Object>> rowMaps = rowPage.getContent().stream().map(row -> {
+            try {
+                Map<String, Object> map = objectMapper.readValue(row.getDataJson(), new TypeReference<Map<String, Object>>() {});
+                map.put("key", row.getId());
+                return map;
+            } catch (Exception e) {
+                return new HashMap<String, Object>();
+            }
+        }).collect(Collectors.toList());
+
+        return DatasetDto.PagedRowsResponse.builder()
+                .totalElements(rowPage.getTotalElements())
+                .totalPages(rowPage.getTotalPages())
+                .currentPage(rowPage.getNumber())
+                .pageSize(rowPage.getSize())
+                .rows(rowMaps)
+                .build();
+    }
+
     public SchemaPreviewDto.Response previewAndValidate(MultipartFile file) throws Exception {
+        if (isCsvFile(file.getOriginalFilename())) {
+            return previewAndValidateCsv(file);
+        }
+
         List<String> warnings = new ArrayList<>();
         boolean valid = true;
 
@@ -228,53 +260,110 @@ public class DatasetService {
             }
             columnRepository.saveAll(columns);
 
-            uploadTaskService.updateProgress(taskId, 40, "엑셀 대용량 행 데이터 읽는 중...");
+            if (isCsvFile(originalFilename)) {
+                uploadTaskService.updateProgress(taskId, 40, "CSV 대용량 행 데이터 읽는 중...");
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(fileBytes), StandardCharsets.UTF_8))) {
+                    String headerLine = reader.readLine(); // 헤더 건너뛰기
+                    final int CHUNK_SIZE = 500;
+                    List<DatasetRow> chunkList = new ArrayList<>();
+                    int rowIndex = 0;
+                    int processedCount = 0;
+                    String line;
 
-            try (InputStream is = new java.io.ByteArrayInputStream(fileBytes); Workbook workbook = WorkbookFactory.create(is)) {
-                Sheet sheet = workbook.getSheetAt(0);
-                int totalRows = sheet.getLastRowNum();
-                Iterator<Row> rowIterator = sheet.iterator();
+                    while ((line = reader.readLine()) != null) {
+                        if (line.trim().isEmpty()) continue;
+                        List<String> values = parseCsvLine(line);
+                        Map<String, Object> rowMap = new LinkedHashMap<>();
 
-                if (rowIterator.hasNext()) {
-                    rowIterator.next(); // skip header
-                }
-
-                List<DatasetRow> datasetRows = new ArrayList<>();
-                int rowIndex = 0;
-                int processedCount = 0;
-
-                while (rowIterator.hasNext()) {
-                    Row row = rowIterator.next();
-                    Map<String, Object> rowMap = new LinkedHashMap<>();
-                    boolean isEmptyRow = true;
-
-                    for (int i = 0; i < request.getColumns().size(); i++) {
-                        SchemaPreviewDto.ColumnInfo col = request.getColumns().get(i);
-                        Cell cell = row.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                        Object cellValue = getCellValue(cell);
-                        if (cellValue != null && !cellValue.toString().trim().isEmpty()) {
-                            isEmptyRow = false;
+                        for (int i = 0; i < request.getColumns().size(); i++) {
+                            SchemaPreviewDto.ColumnInfo col = request.getColumns().get(i);
+                            String cellValue = i < values.size() ? values.get(i) : "";
+                            rowMap.put(col.getColumnKey(), cellValue);
                         }
-                        rowMap.put(col.getColumnKey(), cellValue != null ? cellValue : "");
-                    }
 
-                    if (!isEmptyRow) {
-                        datasetRows.add(DatasetRow.builder()
+                        chunkList.add(DatasetRow.builder()
                                 .datasetId(datasetId)
                                 .rowIndex(rowIndex++)
                                 .dataJson(objectMapper.writeValueAsString(rowMap))
                                 .build());
+
+                        if (chunkList.size() >= CHUNK_SIZE) {
+                            rowRepository.saveAll(chunkList);
+                            chunkList.clear();
+                        }
+
+                        processedCount++;
+                        if (processedCount % 100 == 0) {
+                            int currentPercent = Math.min(95, 40 + (processedCount / 50));
+                            uploadTaskService.updateProgress(taskId, currentPercent, "CSV 데이터 적재 진행 중 (" + processedCount + " 행)");
+                        }
                     }
 
-                    processedCount++;
-                    if (totalRows > 0 && processedCount % 50 == 0) {
-                        int currentPercent = 40 + (int) (((double) processedCount / totalRows) * 55);
-                        uploadTaskService.updateProgress(taskId, Math.min(95, currentPercent), "데이터 적재 진행 중 (" + processedCount + " 행)");
+                    if (!chunkList.isEmpty()) {
+                        rowRepository.saveAll(chunkList);
+                        chunkList.clear();
                     }
+
+                    uploadTaskService.completeTask(taskId, datasetId);
                 }
+            } else {
+                uploadTaskService.updateProgress(taskId, 40, "엑셀 대용량 행 데이터 읽는 중...");
+                try (InputStream is = new java.io.ByteArrayInputStream(fileBytes); Workbook workbook = WorkbookFactory.create(is)) {
+                    Sheet sheet = workbook.getSheetAt(0);
+                    int totalRows = sheet.getLastRowNum();
+                    Iterator<Row> rowIterator = sheet.iterator();
 
-                rowRepository.saveAll(datasetRows);
-                uploadTaskService.completeTask(taskId, datasetId);
+                    if (rowIterator.hasNext()) {
+                        rowIterator.next(); // skip header
+                    }
+
+                    final int CHUNK_SIZE = 500;
+                    List<DatasetRow> chunkList = new ArrayList<>();
+                    int rowIndex = 0;
+                    int processedCount = 0;
+
+                    while (rowIterator.hasNext()) {
+                        Row row = rowIterator.next();
+                        Map<String, Object> rowMap = new LinkedHashMap<>();
+                        boolean isEmptyRow = true;
+
+                        for (int i = 0; i < request.getColumns().size(); i++) {
+                            SchemaPreviewDto.ColumnInfo col = request.getColumns().get(i);
+                            Cell cell = row.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+                            Object cellValue = getCellValue(cell);
+                            if (cellValue != null && !cellValue.toString().trim().isEmpty()) {
+                                isEmptyRow = false;
+                            }
+                            rowMap.put(col.getColumnKey(), cellValue != null ? cellValue : "");
+                        }
+
+                        if (!isEmptyRow) {
+                            chunkList.add(DatasetRow.builder()
+                                    .datasetId(datasetId)
+                                    .rowIndex(rowIndex++)
+                                    .dataJson(objectMapper.writeValueAsString(rowMap))
+                                    .build());
+
+                            if (chunkList.size() >= CHUNK_SIZE) {
+                                rowRepository.saveAll(chunkList);
+                                chunkList.clear();
+                            }
+                        }
+
+                        processedCount++;
+                        if (totalRows > 0 && processedCount % 50 == 0) {
+                            int currentPercent = 40 + (int) (((double) processedCount / totalRows) * 55);
+                            uploadTaskService.updateProgress(taskId, Math.min(95, currentPercent), "데이터 적재 진행 중 (" + processedCount + " 행)");
+                        }
+                    }
+
+                    if (!chunkList.isEmpty()) {
+                        rowRepository.saveAll(chunkList);
+                        chunkList.clear();
+                    }
+
+                    uploadTaskService.completeTask(taskId, datasetId);
+                }
             }
         } catch (Exception e) {
             uploadTaskService.failTask(taskId, e.getMessage());
@@ -397,6 +486,215 @@ public class DatasetService {
             case FORMULA -> cell.getCellFormula();
             default -> null;
         };
+    }
+
+    @Transactional
+    public Long createManualDataset(DatasetDto.ManualCreateRequest request) {
+        if (request.getName() == null || request.getName().trim().isEmpty()) {
+            throw new IllegalArgumentException("데이터셋 이름은 필수입니다.");
+        }
+        if (request.getColumns() == null || request.getColumns().isEmpty()) {
+            throw new IllegalArgumentException("최소 1개 이상의 컬럼 정의가 필요합니다.");
+        }
+
+        DatasetMeta meta = DatasetMeta.builder()
+                .name(request.getName().trim())
+                .description(request.getDescription())
+                .category(request.getCategory() != null && !request.getCategory().trim().isEmpty() ? request.getCategory() : "기타")
+                .ownerId(request.getOwnerId() != null && !request.getOwnerId().trim().isEmpty() ? request.getOwnerId() : "user_admin")
+                .orgId(request.getOrgId() != null && !request.getOrgId().trim().isEmpty() ? request.getOrgId() : "org_hq")
+                .build();
+
+        meta = metaRepository.save(meta);
+        Long datasetId = meta.getId();
+
+        List<DatasetColumn> columns = new ArrayList<>();
+        int order = 0;
+        for (DatasetDto.ManualColumnDef colDef : request.getColumns()) {
+            String colName = colDef.getColumnName() != null && !colDef.getColumnName().trim().isEmpty()
+                    ? colDef.getColumnName().trim()
+                    : "컬럼_" + (order + 1);
+            String dataType = colDef.getDataType() != null && !colDef.getDataType().trim().isEmpty()
+                    ? colDef.getDataType()
+                    : "STRING";
+
+            columns.add(DatasetColumn.builder()
+                    .datasetId(datasetId)
+                    .columnKey("col_" + order)
+                    .columnName(colName)
+                    .dataType(dataType)
+                    .sortOrder(order)
+                    .build());
+            order++;
+        }
+
+        columnRepository.saveAll(columns);
+        return datasetId;
+    }
+
+    private boolean isCsvFile(String filename) {
+        return filename != null && filename.toLowerCase().endsWith(".csv");
+    }
+
+    private List<String> parseCsvLine(String line) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '\"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                tokens.add(sb.toString().trim());
+                sb.setLength(0);
+            } else {
+                sb.append(c);
+            }
+        }
+        tokens.add(sb.toString().trim());
+        return tokens;
+    }
+
+    public SchemaPreviewDto.Response previewAndValidateCsv(MultipartFile file) throws Exception {
+        List<String> warnings = new ArrayList<>();
+        boolean valid = true;
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
+            String headerLine = reader.readLine();
+            if (headerLine == null || headerLine.trim().isEmpty()) {
+                return SchemaPreviewDto.Response.builder()
+                        .valid(false)
+                        .warnings(List.of("CSV 파일이 비어 있습니다."))
+                        .build();
+            }
+            if (headerLine.startsWith("\uFEFF")) {
+                headerLine = headerLine.substring(1);
+            }
+
+            List<String> headers = parseCsvLine(headerLine);
+            if (headers.isEmpty()) {
+                return SchemaPreviewDto.Response.builder()
+                        .valid(false)
+                        .warnings(List.of("첫 번째 행에서 컬럼 헤더 정보를 찾을 수 없습니다."))
+                        .build();
+            }
+
+            List<SchemaPreviewDto.ColumnInfo> columnInfos = new ArrayList<>();
+            Set<String> columnNameSet = new HashSet<>();
+
+            for (int i = 0; i < headers.size(); i++) {
+                String columnName = headers.get(i);
+                if (columnName.isEmpty()) {
+                    columnName = "Column_" + (i + 1);
+                    warnings.add("일부 컬럼 헤더가 비어있어 '" + columnName + "'으로 임시 지정되었습니다.");
+                }
+
+                if (columnNameSet.contains(columnName)) {
+                    warnings.add("중복된 컬럼명('" + columnName + "')이 존재합니다. 정형 DB 적재를 위해 컬럼명을 고유하게 변경해 주세요.");
+                    valid = false;
+                }
+                columnNameSet.add(columnName);
+
+                columnInfos.add(SchemaPreviewDto.ColumnInfo.builder()
+                        .columnKey("col_" + i)
+                        .columnName(columnName)
+                        .dataType("STRING")
+                        .sortOrder(i)
+                        .build());
+            }
+
+            List<Map<String, Object>> previewRows = new ArrayList<>();
+            String line;
+            int sampleCount = 0;
+
+            while ((line = reader.readLine()) != null && sampleCount < 10) {
+                if (line.trim().isEmpty()) continue;
+                List<String> values = parseCsvLine(line);
+                Map<String, Object> rowMap = new LinkedHashMap<>();
+
+                for (int i = 0; i < columnInfos.size(); i++) {
+                    String val = i < values.size() ? values.get(i) : "";
+                    rowMap.put(columnInfos.get(i).getColumnKey(), val);
+                }
+
+                rowMap.put("key", "preview_" + sampleCount);
+                previewRows.add(rowMap);
+                sampleCount++;
+            }
+
+            if (previewRows.isEmpty()) {
+                valid = false;
+                warnings.add("헤더 이후 적재할 유효한 샘플 데이터 행이 존재하지 않습니다.");
+            } else {
+                for (SchemaPreviewDto.ColumnInfo col : columnInfos) {
+                    col.setDataType(inferColumnDataType(col.getColumnKey(), previewRows));
+                }
+            }
+
+            return SchemaPreviewDto.Response.builder()
+                    .valid(valid)
+                    .warnings(warnings)
+                    .columns(columnInfos)
+                    .previewRows(previewRows)
+                    .totalPreviewRows(previewRows.size())
+                    .build();
+        }
+    }
+
+    @Transactional
+    public void updateDatasetMeta(Long id, DatasetDto.MetaUpdateRequest request) {
+        DatasetMeta meta = metaRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Dataset not found: " + id));
+        if (request.getName() != null && !request.getName().trim().isEmpty()) {
+            meta.setName(request.getName().trim());
+        }
+        if (request.getDescription() != null) {
+            meta.setDescription(request.getDescription().trim());
+        }
+        if (request.getCategory() != null && !request.getCategory().trim().isEmpty()) {
+            meta.setCategory(request.getCategory().trim());
+        }
+        metaRepository.save(meta);
+    }
+
+    @Transactional
+    public Long addRow(Long datasetId, Map<String, Object> rowData) throws Exception {
+        metaRepository.findById(datasetId)
+                .orElseThrow(() -> new IllegalArgumentException("Dataset not found: " + datasetId));
+
+        int nextIndex = rowRepository.findFirstByDatasetIdOrderByRowIndexDesc(datasetId)
+                .map(r -> r.getRowIndex() + 1)
+                .orElse(0);
+
+        Map<String, Object> cleanMap = new HashMap<>(rowData);
+        cleanMap.remove("key");
+
+        DatasetRow row = DatasetRow.builder()
+                .datasetId(datasetId)
+                .rowIndex(nextIndex)
+                .dataJson(objectMapper.writeValueAsString(cleanMap))
+                .build();
+
+        return rowRepository.save(row).getId();
+    }
+
+    @Transactional
+    public void updateRow(Long datasetId, Long rowId, Map<String, Object> rowData) throws Exception {
+        DatasetRow row = rowRepository.findByIdAndDatasetId(rowId, datasetId)
+                .orElseThrow(() -> new IllegalArgumentException("Row not found: " + rowId));
+
+        Map<String, Object> cleanMap = new HashMap<>(rowData);
+        cleanMap.remove("key");
+
+        row.setDataJson(objectMapper.writeValueAsString(cleanMap));
+        rowRepository.save(row);
+    }
+
+    @Transactional
+    public void deleteRow(Long datasetId, Long rowId) {
+        DatasetRow row = rowRepository.findByIdAndDatasetId(rowId, datasetId)
+                .orElseThrow(() -> new IllegalArgumentException("Row not found: " + rowId));
+        rowRepository.delete(row);
     }
 }
 

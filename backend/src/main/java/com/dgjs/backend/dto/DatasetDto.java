@@ -63,4 +63,45 @@ public class DatasetDto {
         private String ownerId;
         private String orgId;
     }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ManualCreateRequest {
+        private String name;
+        private String description;
+        private String category;
+        private String ownerId;
+        private String orgId;
+        private List<ManualColumnDef> columns;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ManualColumnDef {
+        private String columnName;
+        private String dataType; // STRING, NUMBER, DATE, BOOLEAN
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PagedRowsResponse {
+        private long totalElements;
+        private int totalPages;
+        private int currentPage;
+        private int pageSize;
+        private List<Map<String, Object>> rows;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class MetaUpdateRequest {
+        private String name;
+        private String description;
+        private String category;
+    }
 }

@@ -16,6 +16,14 @@ export const fetchDatasetDetail = async (id) => {
   return response.json();
 };
 
+export const fetchDatasetRows = async (id, page = 0, size = 20) => {
+  const response = await fetch(`${API_BASE_URL}/datasets/${id}/rows?page=${page}&size=${size}`);
+  if (!response.ok) {
+    throw new Error(`행 데이터를 불러오지 못했습니다.`);
+  }
+  return response.json();
+};
+
 export const previewDatasetFile = async (formData) => {
   const response = await fetch(`${API_BASE_URL}/preview`, {
     method: 'POST',
@@ -66,6 +74,77 @@ export const deleteDataset = async (id) => {
   });
   if (!response.ok) {
     throw new Error('데이터셋 삭제 실패');
+  }
+  return response.json();
+};
+
+export const createManualDataset = async (payload) => {
+  const response = await fetch(`${API_BASE_URL}/datasets/manual`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || '수동 데이터셋 생성에 실패했습니다.');
+  }
+  return response.json();
+};
+
+export const updateDatasetMeta = async (id, meta) => {
+  const response = await fetch(`${API_BASE_URL}/datasets/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(meta),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || '데이터셋 정보 수정에 실패했습니다.');
+  }
+  return response.json();
+};
+
+export const addDatasetRow = async (datasetId, rowData) => {
+  const response = await fetch(`${API_BASE_URL}/datasets/${datasetId}/rows`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(rowData),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || '데이터 행 추가에 실패했습니다.');
+  }
+  return response.json();
+};
+
+export const updateDatasetRow = async (datasetId, rowId, rowData) => {
+  const response = await fetch(`${API_BASE_URL}/datasets/${datasetId}/rows/${rowId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(rowData),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || '데이터 행 수정에 실패했습니다.');
+  }
+  return response.json();
+};
+
+export const deleteDatasetRow = async (datasetId, rowId) => {
+  const response = await fetch(`${API_BASE_URL}/datasets/${datasetId}/rows/${rowId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || '데이터 행 삭제에 실패했습니다.');
   }
   return response.json();
 };

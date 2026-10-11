@@ -22,6 +22,10 @@ import {
   Progress,
   Alert,
   Divider,
+  Checkbox,
+  Popover,
+  Tabs,
+  Modal,
 } from 'antd';
 import {
   DatabaseOutlined,
@@ -32,15 +36,22 @@ import {
   PlusOutlined,
   CheckCircleOutlined,
   DeleteOutlined,
+  SettingOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import {
   fetchDatasets,
   fetchDatasetDetail,
-  uploadDatasetFile,
+  fetchDatasetRows,
   deleteDataset,
   previewDatasetFile,
   uploadDatasetAsync,
   fetchTaskProgress,
+  createManualDataset,
+  updateDatasetMeta,
+  addDatasetRow,
+  updateDatasetRow,
+  deleteDatasetRow,
 } from './api/datasetApi';
 
 
@@ -220,19 +231,56 @@ const DataDetailPage = () => {
   const navigate = useNavigate();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedColumnKeys, setSelectedColumnKeys] = useState([]);
+
+  // Server-side pagination states
+  const [tableRows, setTableRows] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalRows, setTotalRows] = useState(0);
+  const [tableLoading, setTableLoading] = useState(false);
+
+  // Modal & Form states
+  const [metaModalOpen, setMetaModalOpen] = useState(false);
+  const [metaForm] = Form.useForm();
+  const [addRowModalOpen, setAddRowModalOpen] = useState(false);
+  const [addRowForm] = Form.useForm();
+  const [editRowModalOpen, setEditRowModalOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState(null);
+  const [editRowForm] = Form.useForm();
+
+  const loadRows = async (pageToFetch, sizeToFetch) => {
+    setTableLoading(true);
+    try {
+      const pagedData = await fetchDatasetRows(id, pageToFetch - 1, sizeToFetch);
+      setTableRows(pagedData.rows || []);
+      setTotalRows(pagedData.totalElements || 0);
+      setCurrentPage(pageToFetch);
+      setPageSize(sizeToFetch);
+    } catch (err) {
+      message.error(err.message || '행 데이터 페이징 조회 실패');
+    } finally {
+      setTableLoading(false);
+    }
+  };
+
+  const loadDetail = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchDatasetDetail(id);
+      setDetail(data);
+      if (data && data.columns) {
+        setSelectedColumnKeys(data.columns.map((c) => c.key));
+      }
+      await loadRows(1, 10);
+    } catch (err) {
+      message.error(err.message || '상세 정보 조회 실패');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadDetail = async () => {
-      setLoading(true);
-      try {
-        const data = await fetchDatasetDetail(id);
-        setDetail(data);
-      } catch (err) {
-        message.error(err.message || '상세 정보 조회 실패');
-      } finally {
-        setLoading(false);
-      }
-    };
     loadDetail();
   }, [id]);
 
@@ -254,11 +302,174 @@ const DataDetailPage = () => {
     );
   }
 
-  const gridColumns = (detail.columns || []).map((col) => ({
-    title: col.title,
-    dataIndex: col.key,
-    key: col.key,
-  }));
+  const allColumns = detail.columns || [];
+
+  const handleSelectAllColumns = () => {
+    setSelectedColumnKeys(allColumns.map((c) => c.key));
+  };
+
+  const handleDeselectAllColumns = () => {
+    if (allColumns.length > 0) {
+      setSelectedColumnKeys([allColumns[0].key]);
+    }
+  };
+
+  const handleToggleColumn = (key) => {
+    if (selectedColumnKeys.includes(key)) {
+      if (selectedColumnKeys.length === 1) {
+        message.warning('최소 1개 이상의 컬럼은 표시되어야 합니다.');
+        return;
+      }
+      setSelectedColumnKeys(selectedColumnKeys.filter((k) => k !== key));
+    } else {
+      setSelectedColumnKeys([...selectedColumnKeys, key]);
+    }
+  };
+
+  // 1. Metadata Update
+  const openMetaModal = () => {
+    metaForm.setFieldsValue({
+      name: detail.name,
+      description: detail.description,
+      category: detail.category,
+    });
+    setMetaModalOpen(true);
+  };
+
+  const handleSaveMeta = async () => {
+    try {
+      const values = await metaForm.validateFields();
+      await updateDatasetMeta(id, values);
+      message.success('메타데이터가 성공적으로 수정되었습니다.');
+      setDetail((prev) => ({ ...prev, ...values }));
+      setMetaModalOpen(false);
+    } catch (err) {
+      message.error(err.message || '메타데이터 수정 실패');
+    }
+  };
+
+  // 2. Add Row
+  const openAddRowModal = () => {
+    addRowForm.resetFields();
+    setAddRowModalOpen(true);
+  };
+
+  const handleSaveAddRow = async () => {
+    try {
+      const values = await addRowForm.validateFields();
+      await addDatasetRow(id, values);
+      message.success('새로운 데이터 행이 추가되었습니다.');
+      setAddRowModalOpen(false);
+      await loadRows(currentPage, pageSize);
+    } catch (err) {
+      message.error(err.message || '행 추가 실패');
+    }
+  };
+
+  // 3. Edit Row
+  const openEditRowModal = (record) => {
+    setEditingRow(record);
+    editRowForm.setFieldsValue(record);
+    setEditRowModalOpen(true);
+  };
+
+  const handleSaveEditRow = async () => {
+    try {
+      const values = await editRowForm.validateFields();
+      await updateDatasetRow(id, editingRow.key, values);
+      message.success('데이터 행이 수정되었습니다.');
+      setEditRowModalOpen(false);
+      await loadRows(currentPage, pageSize);
+    } catch (err) {
+      message.error(err.message || '행 수정 실패');
+    }
+  };
+
+  // 4. Delete Row
+  const handleDeleteRow = async (rowId) => {
+    try {
+      await deleteDatasetRow(id, rowId);
+      message.success('데이터 행이 삭제되었습니다.');
+      await loadRows(currentPage, pageSize);
+    } catch (err) {
+      message.error(err.message || '행 삭제 실패');
+    }
+  };
+
+  const columnFilterContent = (
+    <div style={{ width: 280, maxHeight: 350, overflowY: 'auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, borderBottom: '1px solid #f0f0f0', paddingBottom: 8 }}>
+        <Typography.Text strong>컬럼 표시 설정</Typography.Text>
+        <Space size="small">
+          <Button type="link" size="small" onClick={handleSelectAllColumns} style={{ padding: 0 }}>전체 선택</Button>
+          <Divider type="vertical" />
+          <Button type="link" size="small" onClick={handleDeselectAllColumns} style={{ padding: 0 }}>기본 1개만</Button>
+        </Space>
+      </div>
+      <Space direction="vertical" style={{ width: '100%' }}>
+        {allColumns.map((col) => (
+          <Checkbox
+            key={col.key}
+            checked={selectedColumnKeys.includes(col.key)}
+            onChange={() => handleToggleColumn(col.key)}
+            style={{ width: '100%', marginInlineStart: 0 }}
+          >
+            <Space orientation="horizontal" size="small">
+              <span>{col.title}</span>
+              <Tag color="geekblue" style={{ fontSize: '11px', margin: 0 }}>{col.dataType}</Tag>
+            </Space>
+          </Checkbox>
+        ))}
+      </Space>
+    </div>
+  );
+
+  const gridColumns = [
+    ...allColumns
+      .filter((col) => selectedColumnKeys.includes(col.key))
+      .map((col) => ({
+        title: (
+          <div>
+            <span>{col.title}</span>
+            <div style={{ fontSize: '11px', color: '#8c8c8c', fontWeight: 'normal' }}>{col.dataType}</div>
+          </div>
+        ),
+        dataIndex: col.key,
+        key: col.key,
+        ellipsis: true,
+        width: 160,
+      })),
+    {
+      title: '작업',
+      key: 'action',
+      fixed: 'right',
+      width: 130,
+      render: (_, record) => (
+        <Space size="small">
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => openEditRowModal(record)}
+            style={{ padding: 0 }}
+          >
+            수정
+          </Button>
+          <Popconfirm
+            title="데이터 행 삭제"
+            description="이 데이터 행을 삭제하시겠습니까?"
+            onConfirm={() => handleDeleteRow(record.key)}
+            okText="삭제"
+            cancelText="취소"
+          >
+            <Button type="link" danger size="small" icon={<DeleteOutlined />} style={{ padding: 0 }}>
+              삭제
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -279,6 +490,9 @@ const DataDetailPage = () => {
             <Text type="secondary">{detail.description || '등록된 설명이 없습니다.'}</Text>
           </div>
           <Space>
+            <Button icon={<EditOutlined />} onClick={openMetaModal}>
+              메타데이터 수정
+            </Button>
             <Tag color="green">메타데이터 정상</Tag>
             <Tag color="purple">ID: {detail.id}</Tag>
           </Space>
@@ -286,7 +500,7 @@ const DataDetailPage = () => {
 
         <Descriptions bordered size="small" column={{ xs: 1, sm: 2, md: 4 }}>
           <Descriptions.Item label="카테고리">{detail.category}</Descriptions.Item>
-          <Descriptions.Item label="총 레코드 수">{detail.rows ? detail.rows.length.toLocaleString() : 0} 행</Descriptions.Item>
+          <Descriptions.Item label="총 레코드 수">{totalRows.toLocaleString()} 행</Descriptions.Item>
           <Descriptions.Item label="컬럼 수">{detail.columns ? detail.columns.length : 0} 개</Descriptions.Item>
           <Descriptions.Item label="등록일시">{detail.createdAt ? new Date(detail.createdAt).toLocaleString() : '-'}</Descriptions.Item>
           <Descriptions.Item label="소속 조직(org_id)">{detail.orgId}</Descriptions.Item>
@@ -294,15 +508,139 @@ const DataDetailPage = () => {
         </Descriptions>
       </Card>
 
-      <Card title={<Space><FileExcelOutlined /><span>데이터 상세 그리드 뷰</span></Space>}>
+      <Card
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Space>
+              <FileExcelOutlined />
+              <span>데이터 상세 그리드 뷰</span>
+              <Tag color="cyan">{selectedColumnKeys.length} / {allColumns.length} 컬럼 표시 중</Tag>
+            </Space>
+            <Space>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openAddRowModal}>
+                데이터 행 추가
+              </Button>
+              <Popover
+                content={columnFilterContent}
+                trigger="click"
+                placement="bottomRight"
+              >
+                <Button icon={<SettingOutlined />}>
+                  컬럼 표시 설정
+                </Button>
+              </Popover>
+            </Space>
+          </div>
+        }
+      >
         <Table
           columns={gridColumns}
-          dataSource={detail.rows || []}
+          dataSource={tableRows}
           rowKey="key"
           bordered
-          pagination={{ pageSize: 10 }}
+          loading={tableLoading}
+          scroll={{ x: 'max-content' }}
+          pagination={{
+            current: currentPage,
+            pageSize: pageSize,
+            total: totalRows,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            showTotal: (total) => `총 ${total.toLocaleString()}개 행`,
+            onChange: (page, size) => loadRows(page, size),
+          }}
         />
       </Card>
+
+      {/* 1. 메타데이터 수정 모달 */}
+      <Modal
+        title="데이터셋 메타데이터 수정"
+        open={metaModalOpen}
+        onOk={handleSaveMeta}
+        onCancel={() => setMetaModalOpen(false)}
+        okText="저장"
+        cancelText="취소"
+      >
+        <Form form={metaForm} layout="vertical">
+          <Form.Item
+            name="name"
+            label="데이터셋 명칭"
+            rules={[{ required: true, message: '데이터셋 이름을 입력하세요.' }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item name="description" label="데이터셋 설명">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="category" label="분류 카테고리">
+            <Select
+              options={[
+                { value: '에너지/환경', label: '에너지/환경' },
+                { value: '설비관리', label: '설비관리' },
+                { value: '품질관리', label: '품질관리' },
+                { value: '생산실적', label: '생산실적' },
+                { value: '기타', label: '기타' },
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 2. 신규 행 추가 모달 */}
+      <Modal
+        title="신규 데이터 행 추가"
+        open={addRowModalOpen}
+        onOk={handleSaveAddRow}
+        onCancel={() => setAddRowModalOpen(false)}
+        okText="추가"
+        cancelText="취소"
+        width={600}
+      >
+        <Form form={addRowForm} layout="vertical">
+          {allColumns.map((col) => (
+            <Form.Item
+              key={col.key}
+              name={col.key}
+              label={
+                <Space>
+                  <span>{col.title}</span>
+                  <Tag color="geekblue" style={{ fontSize: '11px' }}>{col.dataType}</Tag>
+                </Space>
+              }
+            >
+              <Input placeholder={`${col.title} 값 입력`} />
+            </Form.Item>
+          ))}
+        </Form>
+      </Modal>
+
+      {/* 3. 행 수정 모달 */}
+      <Modal
+        title="데이터 행 수정"
+        open={editRowModalOpen}
+        onOk={handleSaveEditRow}
+        onCancel={() => setEditRowModalOpen(false)}
+        okText="수정 완료"
+        cancelText="취소"
+        width={600}
+      >
+        <Form form={editRowForm} layout="vertical">
+          {allColumns.map((col) => (
+            <Form.Item
+              key={col.key}
+              name={col.key}
+              label={
+                <Space>
+                  <span>{col.title}</span>
+                  <Tag color="geekblue" style={{ fontSize: '11px' }}>{col.dataType}</Tag>
+                </Space>
+              }
+            >
+              <Input placeholder={`${col.title} 값 수정`} />
+            </Form.Item>
+          ))}
+        </Form>
+      </Modal>
     </Space>
   );
 };
@@ -310,12 +648,15 @@ const DataDetailPage = () => {
 // 3. /upload - Data Upload & Dynamic Schema Definition & Async Progress Page
 const DataUploadPage = () => {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('excel');
   const [form] = Form.useForm();
+  const [manualForm] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [fileList, setFileList] = useState([]);
   const [parsing, setParsing] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [columnsSchema, setColumnsSchema] = useState([]);
+  const [manualLoading, setManualLoading] = useState(false);
 
   // Async task states
   const [uploadTaskId, setUploadTaskId] = useState(null);
@@ -402,6 +743,26 @@ const DataUploadPage = () => {
       setCurrentStep(2);
     } catch (err) {
       message.error(err.message || '비동기 적재 요청에 실패했습니다.');
+    }
+  };
+
+  // Submit Manual Schema Creation
+  const handleManualCreate = async () => {
+    try {
+      const values = await manualForm.validateFields();
+      if (!values.columns || values.columns.length === 0) {
+        message.error('최소 1개 이상의 컬럼을 추가해 주세요.');
+        return;
+      }
+
+      setManualLoading(true);
+      const res = await createManualDataset(values);
+      message.success('테이블 스키마가 성공적으로 등록되었습니다!');
+      navigate(`/data/${res.datasetId}`);
+    } catch (err) {
+      message.error(err.message || '수동 스키마 생성에 실패했습니다.');
+    } finally {
+      setManualLoading(false);
     }
   };
 
@@ -495,15 +856,157 @@ const DataUploadPage = () => {
       <Breadcrumb items={[{ title: '홈' }, { title: '데이터 적재 및 스키마 정의' }]} />
 
       <Card title={<Title level={4} style={{ margin: 0 }}>신규 데이터 적재 및 동적 스키마 정의</Title>}>
-        <Steps
-          current={currentStep}
-          style={{ marginBottom: 32 }}
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          style={{ marginBottom: 24 }}
           items={[
-            { title: '파일 업로드 & 미리보기' },
-            { title: '동적 스키마 정의 & 유효성 검증' },
-            { title: '비동기 적재 & 진행률' },
+            {
+              key: 'excel',
+              label: <span><FileExcelOutlined /> 엑셀 파일 업로드 기반 적재</span>,
+            },
+            {
+              key: 'manual',
+              label: <span><EditOutlined /> 직접 테이블 설계 및 생성</span>,
+            },
           ]}
         />
+
+        {activeTab === 'manual' ? (
+          <Spin spinning={manualLoading}>
+            <Form
+              form={manualForm}
+              layout="vertical"
+              initialValues={{
+                category: '기타',
+                ownerId: 'user_admin',
+                orgId: 'org_hq',
+                columns: [
+                  { columnName: '', dataType: 'STRING' },
+                ],
+              }}
+            >
+              <Card size="small" title="1. 데이터셋 기본 메타데이터" style={{ marginBottom: 20 }}>
+                <Form.Item
+                  name="name"
+                  label="데이터셋 명칭"
+                  rules={[{ required: true, message: '데이터셋 이름을 입력해주세요.' }]}
+                >
+                  <Input placeholder="예: 2026년 공장 설비 가동 이력 데이터셋" />
+                </Form.Item>
+
+                <Form.Item name="description" label="데이터셋 설명">
+                  <Input.TextArea rows={2} placeholder="데이터셋의 용도 및 설명" />
+                </Form.Item>
+
+                <Space size="large" style={{ display: 'flex' }}>
+                  <Form.Item name="category" label="분류 카테고리" style={{ width: 240 }}>
+                    <Select
+                      options={[
+                        { value: '에너지/환경', label: '에너지/환경' },
+                        { value: '설비관리', label: '설비관리' },
+                        { value: '품질관리', label: '품질관리' },
+                        { value: '생산실적', label: '생산실적' },
+                        { value: '기타', label: '기타' },
+                      ]}
+                    />
+                  </Form.Item>
+
+                  <Form.Item name="orgId" label="소속 조직 (org_id)" style={{ width: 200 }}>
+                    <Input disabled />
+                  </Form.Item>
+
+                  <Form.Item name="ownerId" label="등록자 (owner_id)" style={{ width: 200 }}>
+                    <Input disabled />
+                  </Form.Item>
+                </Space>
+              </Card>
+
+              <Card
+                size="small"
+                title="2. 동적 컬럼 스키마 정의"
+                extra={<Text type="secondary">동적 테이블 구조에 등록될 컬럼명과 타입을 지정합니다.</Text>}
+                style={{ marginBottom: 24 }}
+              >
+                <Form.List name="columns">
+                  {(fields, { add, remove }) => (
+                    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                      {fields.map(({ key, name, ...restField }, index) => (
+                        <Space key={key} style={{ display: 'flex', alignItems: 'center' }} align="baseline">
+                          <Tag color="blue" style={{ minWidth: 40, textAlign: 'center' }}>
+                            #{index + 1}
+                          </Tag>
+                          <Form.Item
+                            {...restField}
+                            name={[name, 'columnName']}
+                            rules={[{ required: true, message: '컬럼명을 입력하세요.' }]}
+                            style={{ width: 260, marginBottom: 0 }}
+                          >
+                            <Input placeholder={`컬럼명 (예: 식별자, 일자, 수치 등)`} />
+                          </Form.Item>
+                          <Form.Item
+                            {...restField}
+                            name={[name, 'dataType']}
+                            rules={[{ required: true, message: '타입 선택' }]}
+                            style={{ width: 180, marginBottom: 0 }}
+                          >
+                            <Select
+                              options={[
+                                { value: 'STRING', label: '문자형 (STRING)' },
+                                { value: 'NUMBER', label: '숫자형 (NUMBER)' },
+                                { value: 'DATE', label: '날짜형 (DATE)' },
+                                { value: 'BOOLEAN', label: '불리언 (BOOLEAN)' },
+                              ]}
+                            />
+                          </Form.Item>
+                          <Button
+                            type="text"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={() => {
+                              if (fields.length <= 1) {
+                                message.warning('최소 1개의 컬럼은 존재해야 합니다.');
+                                return;
+                              }
+                              remove(name);
+                            }}
+                          />
+                        </Space>
+                      ))}
+                      <Button
+                        type="dashed"
+                        onClick={() => add({ columnName: '', dataType: 'STRING' })}
+                        block
+                        icon={<PlusOutlined />}
+                      >
+                        컬럼 추가하기
+                      </Button>
+                    </Space>
+                  )}
+                </Form.List>
+              </Card>
+
+              <Button
+                type="primary"
+                size="large"
+                icon={<CheckCircleOutlined />}
+                onClick={handleManualCreate}
+              >
+                테이블 스키마 생성 완료
+              </Button>
+            </Form>
+          </Spin>
+        ) : (
+          <div>
+            <Steps
+              current={currentStep}
+              style={{ marginBottom: 32 }}
+              items={[
+                { title: '파일 업로드 & 미리보기' },
+                { title: '동적 스키마 정의 & 유효성 검증' },
+                { title: '비동기 적재 & 진행률' },
+              ]}
+            />
 
         {currentStep === 0 && (
           <Spin spinning={parsing} tip="엑셀 파일 분석 및 미리보기 파싱 중...">
@@ -708,6 +1211,8 @@ const DataUploadPage = () => {
                 </div>
               )}
             </div>
+          </div>
+        )}
           </div>
         )}
       </Card>
