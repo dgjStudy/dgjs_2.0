@@ -4,6 +4,7 @@
 
 - 파이프라인: [모듈 0: .exe 수집기] → [모듈 B: 적재/스키마] → [모듈 C: 시각화/그리드] → [모듈 A: 권한/소속] → [모듈 D: 연계 API]
 - 현재 단계: **Core MVP (모듈 B + C)**. 사용자/로그인(A)과 외부 연계 API(D)는 후순위.
+- 프로젝트 구조·데이터 모델·API·흐름: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - 원본 규칙: `.agents/rules/dgjs2.md` (Antigravity IDE용). 규칙이 바뀌면 두 파일을 함께 갱신한다.
 
 ## 실행 방법
@@ -20,33 +21,11 @@
 - `npm install` → `npm run dev` → http://localhost:5173
 - `npm run lint` (oxlint), `npm run build`
 
-## 구조
-
-```
-backend/src/main/java/com/dgjs/backend/
-  config/      AsyncConfig(@EnableAsync), WebConfig(CORS)
-  controller/  DatasetController — 모든 REST API (/api/**)
-  service/     DatasetService(파싱·적재·CRUD 핵심 로직), UploadTaskService(비동기 진행률 인메모리 맵)
-  domain/      DatasetMeta, DatasetColumn, DatasetRow
-  repository/  JpaRepository
-  dto/         DatasetDto, SchemaPreviewDto
-frontend/src/
-  App.jsx            레이아웃 + 페이지 3개 (/data, /data/:id, /upload)
-  api/datasetApi.js  fetch 래퍼
-```
-
-### 데이터 모델 (사용자별 CREATE TABLE 금지 — 메타/데이터 분리 전략)
-- `dataset_meta` — 데이터셋 1건 (name, description, category, owner_id, org_id, created_at)
-- `dataset_column` — 열 정의 (column_key=`col_0..N`, column_name, data_type: STRING/NUMBER/DATE/BOOLEAN, sort_order)
-- `dataset_row` — 행 1건 = `data_json` (`{"col_0": ..., "col_1": ...}`), row_index
-
-### 파일 적재 흐름
-1. `POST /api/preview` — 헤더 + 샘플 10행 파싱, 열 타입 추정, 구조 검증
-2. 사용자가 스키마(컬럼명/타입) 확정 → `POST /api/upload-async` → `@Async`로 500건 청크 적재, taskId 반환
-3. 프론트가 1초마다 `GET /api/tasks/{taskId}/progress` 폴링 → 완료 시 상세 페이지 이동
-
 ## 규칙
+- **언어**: 사용자와의 모든 대화·설명·질문·작업 보고는 **한국어**로 한다. (코드 식별자, 명령어, 로그 원문은 그대로 둔다.)
+- **Git**: 모든 git 명령(commit, push 등)은 사용자가 직접 실행한다. Claude는 파일 수정 후 변경 파일 목록과 커밋 메시지 제안만 한다.
 - **Backend**: Spring Boot 3.x, JPA (MyBatis 허용), MySQL. 1,000행 이상 대용량 적재는 비동기 처리.
+- **데이터 저장**: 사용자별 `CREATE TABLE` 금지. 메타데이터 테이블과 JSON 데이터 적재 테이블 분리 전략을 유지한다.
 - **Frontend Styling**
   - 별도 CSS/SCSS 파일 작성 금지.
   - 모든 UI는 antd 컴포넌트(Table, Form, Upload, Card, message 등) + 인라인 `style` prop으로만 해결.
@@ -54,3 +33,4 @@ frontend/src/
 - **Multi-tenancy**: 인증(A 모듈) 구현 전이라도 엔티티·API 파라미터에 항상 `owner_id`, `org_id`를 상정 (현재 mock: `user_admin`, `org_hq`).
 - **보안**: DB 비밀번호 등 시크릿은 절대 커밋하지 않는다 (`application-local.yml` 또는 환경변수 사용).
 - **코딩 스타일**: 장황한 이론 설명보다 즉시 실행 가능한 코드 위주. 컴포넌트/API 단위로 모듈화.
+- **문서**: 구조·API·흐름이 바뀌면 `docs/ARCHITECTURE.md`도 함께 갱신한다.
