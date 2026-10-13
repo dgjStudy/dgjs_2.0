@@ -32,3 +32,15 @@ trigger: always_on
 ## 4. Coding Assistant Guidelines
 - 장황한 이론 설명은 생략하고, 즉시 실행 가능한 코드(JSX, SpringBoot Controller/Service/Entity/Repository) 위주로 작성한다.
 - 요청된 컴포넌트나 API 단위로 모듈화하여 간결하고 명확하게 제공한다.
+
+## 5. Stack-specific Rules (요약 — 상세는 backend/CLAUDE.md, frontend/CLAUDE.md)
+- Backend:
+  - Controller는 요청/응답만, 로직은 Service. Entity를 직접 반환하지 말고 DTO(`XxxDto` 중첩 클래스)로 변환한다.
+  - 예외는 `@RestControllerAdvice`에서 처리 (400/404/500), 오류 본문은 `{ "message": "..." }`.
+  - 목록 API는 페이징 필수, 대량 insert/delete는 벌크 처리, `@Async` 안에서 작업 상태 초기화 금지.
+  - 수정 후 `./gradlew compileJava` (로직 변경 시 `./gradlew test`).
+- Frontend:
+  - 구조는 `pages/` `components/` `api/` `constants/`. 파일 약 300줄 초과 시 분리 검토.
+  - 백엔드 호출은 `src/api/`에서만, Base URL은 Vite proxy + 상대경로 `/api`.
+  - 폼은 antd `Form`, 그리드는 서버사이드 페이징, 알림은 `message`/`Modal`. antd v6 deprecated API 금지.
+  - 수정 후 `npm run lint`, `npm run build`.

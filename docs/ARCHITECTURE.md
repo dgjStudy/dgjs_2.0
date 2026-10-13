@@ -5,7 +5,6 @@
 ```
 dgjs_2.0/
 ├─ CLAUDE.md                  Claude Code 작업 규칙
-├─ .agents/rules/dgjs2.md     Antigravity IDE용 규칙 (원본)
 ├─ docs/                      프로젝트 문서
 ├─ backend/                   Spring Boot 3.3.4 / Java 17 / JPA / MySQL / Apache POI / springdoc
 │   └─ src/main/java/com/dgjs/backend/
