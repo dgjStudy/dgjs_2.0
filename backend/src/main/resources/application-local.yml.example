@@ -1,0 +1,6 @@
+# 이 파일을 application-local.yml 로 복사한 뒤 본인 환경에 맞게 수정하세요.
+# application-local.yml 은 .gitignore 에 등록되어 커밋되지 않습니다.
+spring:
+  datasource:
+    username: root
+    password: 'your-mysql-password'
