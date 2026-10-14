@@ -11,6 +11,9 @@ import com.dgjs.backend.repository.DatasetColumnRepository;
 import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.DatasetRowRepository;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 import org.apache.poi.ss.usermodel.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -22,7 +25,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
-import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -158,7 +163,6 @@ public class DatasetService {
             }
 
             List<SchemaPreviewDto.ColumnInfo> columnInfos = new ArrayList<>();
-            Set<String> columnNameSet = new HashSet<>();
 
             for (int i = 0; i < headerRow.getLastCellNum(); i++) {
                 Cell cell = headerRow.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
@@ -168,12 +172,6 @@ public class DatasetService {
                     columnName = "Column_" + (i + 1);
                     warnings.add("일부 컬럼 헤더가 비어있어 '" + columnName + "'으로 임시 지정되었습니다.");
                 }
-
-                if (columnNameSet.contains(columnName)) {
-                    warnings.add("중복된 컬럼명('" + columnName + "')이 존재합니다. 정형 DB 적재를 위해 컬럼명을 고유하게 변경해 주세요.");
-                    valid = false;
-                }
-                columnNameSet.add(columnName);
 
                 columnInfos.add(SchemaPreviewDto.ColumnInfo.builder()
                         .columnKey("col_" + i)
@@ -268,17 +266,19 @@ public class DatasetService {
 
             if (isCsvFile(originalFilename)) {
                 uploadTaskService.updateProgress(taskId, 40, "CSV 대용량 행 데이터 읽는 중...");
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(fileBytes), StandardCharsets.UTF_8))) {
-                    String headerLine = reader.readLine(); // 헤더 건너뛰기
+                try (CSVParser parser = openCsvParser(fileBytes)) {
+                    Iterator<CSVRecord> records = parser.iterator();
+                    if (records.hasNext()) {
+                        records.next(); // 헤더 건너뛰기
+                    }
                     final int CHUNK_SIZE = 500;
                     List<DatasetRow> chunkList = new ArrayList<>();
                     int rowIndex = 0;
                     int processedCount = 0;
-                    String line;
 
-                    while ((line = reader.readLine()) != null) {
-                        if (line.trim().isEmpty()) continue;
-                        List<String> values = parseCsvLine(line);
+                    while (records.hasNext()) {
+                        List<String> values = records.next().toList();
+                        if (isBlankRecord(values)) continue;
                         Map<String, Object> rowMap = new LinkedHashMap<>();
 
                         for (int i = 0; i < request.getColumns().size(); i++) {
@@ -580,43 +580,51 @@ public class DatasetService {
         return filename != null && filename.toLowerCase().endsWith(".csv");
     }
 
-    private List<String> parseCsvLine(String line) {
-        List<String> tokens = new ArrayList<>();
-        StringBuilder sb = new StringBuilder();
-        boolean inQuotes = false;
-        for (int i = 0; i < line.length(); i++) {
-            char c = line.charAt(i);
-            if (c == '\"') {
-                inQuotes = !inQuotes;
-            } else if (c == ',' && !inQuotes) {
-                tokens.add(sb.toString().trim());
-                sb.setLength(0);
-            } else {
-                sb.append(c);
+    // UTF-8로 엄격 해석이 가능하면 UTF-8, 아니면 엑셀 저장 CSV에 흔한 MS949로 판단
+    private Charset detectCsvCharset(byte[] bytes) {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        ByteBuffer in = ByteBuffer.wrap(bytes);
+        CharBuffer out = CharBuffer.allocate(8192);
+        CoderResult result;
+        while (!(result = decoder.decode(in, out, true)).isUnderflow()) {
+            if (result.isError()) {
+                return Charset.forName("MS949");
             }
+            out.clear();
         }
-        tokens.add(sb.toString().trim());
-        return tokens;
+        return StandardCharsets.UTF_8;
+    }
+
+    private CSVParser openCsvParser(byte[] bytes) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(bytes), detectCsvCharset(bytes)));
+        reader.mark(1);
+        if (reader.read() != '﻿') {
+            reader.reset();
+        }
+        return CSVFormat.DEFAULT.builder().setTrim(true).build().parse(reader);
+    }
+
+    private boolean isBlankRecord(List<String> values) {
+        return values.stream().allMatch(String::isEmpty);
     }
 
     public SchemaPreviewDto.Response previewAndValidateCsv(MultipartFile file) throws Exception {
         List<String> warnings = new ArrayList<>();
         boolean valid = true;
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
-            String headerLine = reader.readLine();
-            if (headerLine == null || headerLine.trim().isEmpty()) {
+        try (CSVParser parser = openCsvParser(file.getBytes())) {
+            Iterator<CSVRecord> records = parser.iterator();
+            if (!records.hasNext()) {
                 return SchemaPreviewDto.Response.builder()
                         .valid(false)
                         .warnings(List.of("CSV 파일이 비어 있습니다."))
                         .build();
             }
-            if (headerLine.startsWith("\uFEFF")) {
-                headerLine = headerLine.substring(1);
-            }
 
-            List<String> headers = parseCsvLine(headerLine);
-            if (headers.isEmpty()) {
+            List<String> headers = records.next().toList();
+            if (headers.isEmpty() || isBlankRecord(headers)) {
                 return SchemaPreviewDto.Response.builder()
                         .valid(false)
                         .warnings(List.of("첫 번째 행에서 컬럼 헤더 정보를 찾을 수 없습니다."))
@@ -624,7 +632,6 @@ public class DatasetService {
             }
 
             List<SchemaPreviewDto.ColumnInfo> columnInfos = new ArrayList<>();
-            Set<String> columnNameSet = new HashSet<>();
 
             for (int i = 0; i < headers.size(); i++) {
                 String columnName = headers.get(i);
@@ -632,12 +639,6 @@ public class DatasetService {
                     columnName = "Column_" + (i + 1);
                     warnings.add("일부 컬럼 헤더가 비어있어 '" + columnName + "'으로 임시 지정되었습니다.");
                 }
-
-                if (columnNameSet.contains(columnName)) {
-                    warnings.add("중복된 컬럼명('" + columnName + "')이 존재합니다. 정형 DB 적재를 위해 컬럼명을 고유하게 변경해 주세요.");
-                    valid = false;
-                }
-                columnNameSet.add(columnName);
 
                 columnInfos.add(SchemaPreviewDto.ColumnInfo.builder()
                         .columnKey("col_" + i)
@@ -648,12 +649,11 @@ public class DatasetService {
             }
 
             List<Map<String, Object>> previewRows = new ArrayList<>();
-            String line;
             int sampleCount = 0;
 
-            while ((line = reader.readLine()) != null && sampleCount < 10) {
-                if (line.trim().isEmpty()) continue;
-                List<String> values = parseCsvLine(line);
+            while (records.hasNext() && sampleCount < 10) {
+                List<String> values = records.next().toList();
+                if (isBlankRecord(values)) continue;
                 Map<String, Object> rowMap = new LinkedHashMap<>();
 
                 for (int i = 0; i < columnInfos.size(); i++) {
@@ -682,6 +682,30 @@ public class DatasetService {
                     .previewRows(previewRows)
                     .totalPreviewRows(previewRows.size())
                     .build();
+        } catch (UncheckedIOException e) {
+            throw new IllegalArgumentException("CSV 형식이 올바르지 않습니다. 따옴표 짝이 맞는지 확인해 주세요.");
+        }
+    }
+
+    public void validateUploadRequest(SchemaPreviewDto.FinalUploadRequest request) {
+        List<SchemaPreviewDto.ColumnInfo> columns = request.getColumns();
+        if (columns == null || columns.isEmpty()) {
+            throw new IllegalArgumentException("컬럼 정의가 필요합니다.");
+        }
+
+        Set<String> names = new HashSet<>();
+        Set<String> keys = new HashSet<>();
+        for (SchemaPreviewDto.ColumnInfo col : columns) {
+            String name = col.getColumnName() == null ? "" : col.getColumnName().trim();
+            if (name.isEmpty()) {
+                throw new IllegalArgumentException("컬럼명이 비어 있는 컬럼이 있습니다.");
+            }
+            if (!names.add(name)) {
+                throw new IllegalArgumentException("중복된 컬럼명('" + name + "')이 존재합니다. 컬럼명을 고유하게 변경해 주세요.");
+            }
+            if (col.getColumnKey() == null || col.getColumnKey().isBlank() || !keys.add(col.getColumnKey())) {
+                throw new IllegalArgumentException("컬럼 키가 비어 있거나 중복되었습니다.");
+            }
         }
     }
 

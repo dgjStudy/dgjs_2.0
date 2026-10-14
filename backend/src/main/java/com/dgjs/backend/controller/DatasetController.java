@@ -57,6 +57,7 @@ public class DatasetController {
             @RequestPart("metadata") String metadataJson) {
         try {
             SchemaPreviewDto.FinalUploadRequest request = objectMapper.readValue(metadataJson, SchemaPreviewDto.FinalUploadRequest.class);
+            datasetService.validateUploadRequest(request);
             String taskId = UUID.randomUUID().toString();
             
             // HTTP 요청 스레드가 종료되면서 Tomcat 임시 임시파일(upload_xxx.tmp)이 삭제되는 현상을 방지하기 위해 바이트 배열을 추출
