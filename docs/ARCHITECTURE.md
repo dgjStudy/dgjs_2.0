@@ -62,7 +62,7 @@ dgjs_2.0/
 ## 주요 흐름
 
 ### 파일 적재 (엑셀/CSV)
-1. **미리보기** — 파일 선택 시 `POST /api/preview`. 헤더로 `col_i` 키를 만들고, 상위 10행을 읽어 열마다 타입을 추정(전부 숫자면 NUMBER, 아니면 STRING)하고, 중복 헤더 등 구조 문제를 검증한다.
+1. **미리보기** — 파일 선택 시 `POST /api/preview`. 헤더로 `col_i` 키를 만들고, 상위 10행을 읽어 열마다 타입을 추정(전부 숫자면 NUMBER, 아니면 STRING)하고, 빈 헤더·빈 파일 등 구조 문제를 검증한다. 중복 컬럼명은 Step1에서 수정 가능하므로 막지 않고, 프론트가 현재 스키마 기준으로 실시간 검증하며 서버도 `POST /api/upload-async`에서 컬럼명(빈 값·중복)·컬럼 키를 재검증한다(400). CSV는 Apache Commons CSV로 파싱하며(따옴표 안 줄바꿈·`""` 이스케이프 지원) UTF-8 엄격 검사에 실패하면 MS949로 읽고 BOM은 제거한다.
 2. **스키마 확정** — 사용자가 컬럼명/타입을 수정한 뒤 `POST /api/upload-async` (file + metadata JSON).
 3. **비동기 적재** — 컨트롤러가 파일을 바이트 배열로 읽고, `UploadTaskService.initTask`로 작업을 먼저 등록한 뒤 `@Async` 메서드에 넘기고 즉시 taskId를 응답한다. 백그라운드 스레드가 meta(status=PROCESSING) → column → 행(500건 단위)을 저장하며 진행률을 기록하고, 완료 시 status를 READY로 바꾼다. 실패하면 저장된 meta/column/row를 삭제한다(삭제마저 실패하면 FAILED로 남김). 목록·상세 조회는 READY(또는 NULL)만 노출한다.
 4. **진행률 폴링** — 프론트가 1초마다 `GET /api/tasks/{taskId}/progress`를 호출해 진행률을 표시하고, COMPLETED면 상세 페이지로 이동한다.

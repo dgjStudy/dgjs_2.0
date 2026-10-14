@@ -9,12 +9,12 @@
 - [x] git 커밋 이력에서 DB 비밀번호 제거 (filter-repo, force push 완료)
 
 ## 🔴 P1 — 버그 / 데이터 정합성
-- [x] **1. 진행률 폴링 레이스 컨디션** — `initTask()`가 @Async 스레드 안에서 호출됨(`DatasetService.processAsyncUpload`). 첫 폴링이 먼저 도착하면 "존재하지 않는 작업 ID(FAILED)" 응답을 받아 프론트가 실패 처리. → Controller에서 비동기 호출 전에 `initTask`.
-- [x] **2. 적재 실패 시 부분 데이터 잔존** — 비동기 적재 중 실패하면 meta+column+일부 행이 남고, 적재 중에도 목록에 미완성 데이터셋이 노출됨. → 실패 시 정리(삭제), 필요하면 `dataset_meta.status`(PROCESSING/READY/FAILED) 추가.
-- [x] **3. 수식 셀이 수식 문자열로 저장** — `getCellValue`의 FORMULA가 `getCellFormula()` 반환. → 캐시된 결과값 사용.
-- [x] **4. 날짜/숫자 포맷** — 날짜가 `Date.toString()` 형식, 정수가 `1001.0`으로 저장. → 날짜는 ISO 형식, 정수는 long.
-- [ ] **5. 중복 컬럼명 수정 불가** — 미리보기 `valid=false`면 적재 버튼이 비활성인데, Step1에서 컬럼명을 고쳐도 valid가 갱신되지 않음. → 프론트에서 현재 스키마 기준 재검증 + 서버 최종 업로드 시 재검증.
-- [ ] **6. CSV 파싱 결함** — 따옴표 안 줄바꿈, `""` 이스케이프 미처리, UTF-8 고정(CP949 한글 CSV 깨짐). → 인코딩 감지(MS949 fallback) + 파서 개선(또는 Apache Commons CSV).
+- [x] **1. 진행률 폴링 레이스 컨디션** — `initTask()`가 @Async 스레드 안에서 호출됨(`DatasetService.processAsyncUpload`). 첫 폴링이 먼저 도착하면 "존재하지 않는 작업 ID(FAILED)" 응답을 받아 프론트가 실패 처리. → Controller에서 비동기 호출 전에 `initTask`. (aa56270)
+- [x] **2. 적재 실패 시 부분 데이터 잔존** — 비동기 적재 중 실패하면 meta+column+일부 행이 남고, 적재 중에도 목록에 미완성 데이터셋이 노출됨. → 실패 시 정리(삭제), 필요하면 `dataset_meta.status`(PROCESSING/READY/FAILED) 추가. (aa56270)
+- [x] **3. 수식 셀이 수식 문자열로 저장** — `getCellValue`의 FORMULA가 `getCellFormula()` 반환. → 캐시된 결과값 사용. (aa56270)
+- [x] **4. 날짜/숫자 포맷** — 날짜가 `Date.toString()` 형식, 정수가 `1001.0`으로 저장. → 날짜는 ISO 형식, 정수는 long. (aa56270)
+- [x] **5. 중복 컬럼명 수정 불가** — 미리보기 `valid=false`면 적재 버튼이 비활성인데, Step1에서 컬럼명을 고쳐도 valid가 갱신되지 않음. → 프론트에서 현재 스키마 기준 재검증 + 서버 최종 업로드 시 재검증.
+- [x] **6. CSV 파싱 결함** — 따옴표 안 줄바꿈, `""` 이스케이프 미처리, UTF-8 고정(CP949 한글 CSV 깨짐). → 인코딩 감지(MS949 fallback) + 파서 개선(또는 Apache Commons CSV).
 
 ## 🟠 P2 — 성능
 - [ ] **7. 상세 API가 전체 행 로드** — `getDatasetDetail`이 모든 row를 읽음(프론트는 미사용). → rows 제거.
