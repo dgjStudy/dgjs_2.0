@@ -33,6 +33,15 @@ public class DatasetMeta {
     @Column(name = "org_id", length = 50)
     private String orgId;
 
+    // 컬럼 추가 전 기존 데이터는 NULL이며 READY를 의미함
+    @Column(length = 20)
+    @Builder.Default
+    private String status = STATUS_READY;
+
+    public static final String STATUS_PROCESSING = "PROCESSING";
+    public static final String STATUS_READY = "READY";
+    public static final String STATUS_FAILED = "FAILED";
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

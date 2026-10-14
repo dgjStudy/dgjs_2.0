@@ -18,6 +18,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
@@ -33,11 +34,12 @@ public class DatasetService {
     private final DatasetColumnRepository columnRepository;
     private final DatasetRowRepository rowRepository;
     private final UploadTaskService uploadTaskService;
+    private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional(readOnly = true)
     public List<DatasetDto.SummaryResponse> getAllDatasets() {
-        List<DatasetMeta> metaList = metaRepository.findAllByOrderByCreatedAtDesc();
+        List<DatasetMeta> metaList = metaRepository.findAllReadyOrderByCreatedAtDesc();
         return metaList.stream().map(meta -> {
             long rowCount = rowRepository.countByDatasetId(meta.getId());
             int columnCount = columnRepository.findByDatasetIdOrderBySortOrderAsc(meta.getId()).size();
@@ -59,6 +61,9 @@ public class DatasetService {
     public DatasetDto.DetailResponse getDatasetDetail(Long datasetId) {
         DatasetMeta meta = metaRepository.findById(datasetId)
                 .orElseThrow(() -> new IllegalArgumentException("Dataset not found: " + datasetId));
+        if (meta.getStatus() != null && !DatasetMeta.STATUS_READY.equals(meta.getStatus())) {
+            throw new IllegalArgumentException("Dataset not found: " + datasetId);
+        }
 
         List<DatasetColumn> columns = columnRepository.findByDatasetIdOrderBySortOrderAsc(datasetId);
         List<DatasetRow> rows = rowRepository.findByDatasetIdOrderByRowIndexAsc(datasetId);
@@ -226,7 +231,7 @@ public class DatasetService {
 
     @Async
     public void processAsyncUpload(String taskId, byte[] fileBytes, String originalFilename, SchemaPreviewDto.FinalUploadRequest request) {
-        uploadTaskService.initTask(taskId);
+        Long datasetId = null;
         try {
             uploadTaskService.updateProgress(taskId, 10, "데이터 메타정보 생성 중...");
 
@@ -241,10 +246,11 @@ public class DatasetService {
                     .category(request.getCategory() != null ? request.getCategory() : "기타")
                     .ownerId(request.getOwnerId() != null ? request.getOwnerId() : "user_admin")
                     .orgId(request.getOrgId() != null ? request.getOrgId() : "org_hq")
+                    .status(DatasetMeta.STATUS_PROCESSING)
                     .build();
 
             meta = metaRepository.save(meta);
-            Long datasetId = meta.getId();
+            datasetId = meta.getId();
 
             uploadTaskService.updateProgress(taskId, 25, "확정된 스키마 저장 중...");
 
@@ -304,7 +310,7 @@ public class DatasetService {
                         chunkList.clear();
                     }
 
-                    uploadTaskService.completeTask(taskId, datasetId);
+                    finishUpload(taskId, datasetId);
                 }
             } else {
                 uploadTaskService.updateProgress(taskId, 40, "엑셀 대용량 행 데이터 읽는 중...");
@@ -362,12 +368,40 @@ public class DatasetService {
                         chunkList.clear();
                     }
 
-                    uploadTaskService.completeTask(taskId, datasetId);
+                    finishUpload(taskId, datasetId);
                 }
             }
         } catch (Exception e) {
+            cleanupFailedUpload(datasetId);
             uploadTaskService.failTask(taskId, e.getMessage());
         }
+    }
+
+    private void finishUpload(String taskId, Long datasetId) {
+        DatasetMeta meta = metaRepository.findById(datasetId)
+                .orElseThrow(() -> new IllegalStateException("적재 중 데이터셋이 삭제되었습니다."));
+        meta.setStatus(DatasetMeta.STATUS_READY);
+        metaRepository.save(meta);
+        uploadTaskService.completeTask(taskId, datasetId);
+    }
+
+    // 정리마저 실패한 경우 FAILED로 남겨 목록에서 숨김
+    private void cleanupFailedUpload(Long datasetId) {
+        if (datasetId == null) return;
+        try {
+            transactionTemplate.executeWithoutResult(tx -> deleteDatasetInternal(datasetId));
+        } catch (Exception cleanupError) {
+            metaRepository.findById(datasetId).ifPresent(m -> {
+                m.setStatus(DatasetMeta.STATUS_FAILED);
+                metaRepository.save(m);
+            });
+        }
+    }
+
+    private void deleteDatasetInternal(Long datasetId) {
+        rowRepository.deleteByDatasetId(datasetId);
+        columnRepository.deleteByDatasetId(datasetId);
+        metaRepository.deleteById(datasetId);
     }
 
     @Transactional
@@ -447,9 +481,7 @@ public class DatasetService {
 
     @Transactional
     public void deleteDataset(Long datasetId) {
-        rowRepository.deleteByDatasetId(datasetId);
-        columnRepository.deleteByDatasetId(datasetId);
-        metaRepository.deleteById(datasetId);
+        deleteDatasetInternal(datasetId);
     }
 
     private String inferColumnDataType(String colKey, List<Map<String, Object>> rows) {
@@ -479,13 +511,25 @@ public class DatasetService {
 
     private Object getCellValue(Cell cell) {
         if (cell == null) return null;
-        return switch (cell.getCellType()) {
+        CellType type = cell.getCellType() == CellType.FORMULA ? cell.getCachedFormulaResultType() : cell.getCellType();
+        return switch (type) {
             case STRING -> cell.getStringCellValue();
-            case NUMERIC -> DateUtil.isCellDateFormatted(cell) ? cell.getDateCellValue().toString() : cell.getNumericCellValue();
+            case NUMERIC -> numericCellValue(cell);
             case BOOLEAN -> cell.getBooleanCellValue();
-            case FORMULA -> cell.getCellFormula();
             default -> null;
         };
+    }
+
+    private Object numericCellValue(Cell cell) {
+        if (DateUtil.isCellDateFormatted(cell)) {
+            java.time.LocalDateTime dt = cell.getLocalDateTimeCellValue();
+            return dt.toLocalTime().equals(java.time.LocalTime.MIDNIGHT) ? dt.toLocalDate().toString() : dt.toString();
+        }
+        double d = cell.getNumericCellValue();
+        if (d == Math.rint(d) && Math.abs(d) < 1e15) {
+            return (long) d;
+        }
+        return d;
     }
 
     @Transactional

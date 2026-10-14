@@ -63,6 +63,8 @@ public class DatasetController {
             byte[] fileBytes = file.getBytes();
             String originalFilename = file.getOriginalFilename();
             
+            // 비동기 스레드 시작 전에 첫 진행률 조회가 도착해도 작업이 존재해야 하므로 호출 전 등록임
+            uploadTaskService.initTask(taskId);
             datasetService.processAsyncUpload(taskId, fileBytes, originalFilename, request);
             
             return ResponseEntity.ok(Map.of("success", true, "taskId", taskId, "message", "비동기 업로드가 시작되었습니다."));
