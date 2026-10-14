@@ -713,9 +713,27 @@ const DataUploadPage = () => {
     );
   };
 
+  const duplicateColumnNames = (() => {
+    const seen = new Set();
+    const duplicated = new Set();
+    columnsSchema.forEach((col) => {
+      const name = (col.columnName || '').trim();
+      if (!name) return;
+      if (seen.has(name)) duplicated.add(name);
+      seen.add(name);
+    });
+    return [...duplicated];
+  })();
+  const hasBlankColumnName = columnsSchema.some((col) => !(col.columnName || '').trim());
+  const schemaInvalid = duplicateColumnNames.length > 0 || hasBlankColumnName;
+
   // Start Async Upload
   const handleStartAsyncUpload = async () => {
     try {
+      if (schemaInvalid) {
+        message.error('컬럼명이 비어 있거나 중복된 컬럼이 있습니다. 컬럼명을 수정해 주세요.');
+        return;
+      }
       const values = await form.validateFields();
       if (fileList.length === 0) {
         message.error('첨부된 파일이 없습니다.');
@@ -732,7 +750,7 @@ const DataUploadPage = () => {
         category: values.category || '기타',
         ownerId: values.ownerId || 'user_admin',
         orgId: values.orgId || 'org_hq',
-        columns: columnsSchema,
+        columns: columnsSchema.map((col) => ({ ...col, columnName: col.columnName.trim() })),
       };
 
       formData.append('metadata', JSON.stringify(metadataPayload));
@@ -1069,6 +1087,21 @@ const DataUploadPage = () => {
 
         {currentStep === 1 && (
           <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            {schemaInvalid && (
+              <Alert
+                title="컬럼명을 수정해 주세요."
+                description={
+                  <div>
+                    {duplicateColumnNames.map((name) => (
+                      <div key={name}>• 중복된 컬럼명: {name}</div>
+                    ))}
+                    {hasBlankColumnName && <div>• 컬럼명이 비어 있는 컬럼이 있습니다.</div>}
+                  </div>
+                }
+                type="error"
+                showIcon
+              />
+            )}
             {previewData && !previewData.valid ? (
               <Alert
                 message="DB 적재 제한 / 데이터 구조 주의사항"
@@ -1174,7 +1207,7 @@ const DataUploadPage = () => {
                 type="primary"
                 icon={<CheckCircleOutlined />}
                 size="large"
-                disabled={previewData && !previewData.valid}
+                disabled={(previewData && !previewData.valid) || schemaInvalid}
                 onClick={handleStartAsyncUpload}
               >
                 비동기 적재 시작
