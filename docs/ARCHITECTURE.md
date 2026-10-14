@@ -38,7 +38,7 @@ dgjs_2.0/
 
 | 테이블 | 의미 | 주요 컬럼 |
 |---|---|---|
-| `dataset_meta` | 데이터셋 1건 (엑셀 시트 1장) | dataset_id, name, description, category, owner_id, org_id, created_at |
+| `dataset_meta` | 데이터셋 1건 (엑셀 시트 1장) | dataset_id, name, description, category, owner_id, org_id, status(PROCESSING/READY/FAILED, NULL=READY), created_at |
 | `dataset_column` | 열 정의 (헤더 1칸) | dataset_id, column_key(`col_0..N`), column_name, data_type(STRING/NUMBER/DATE/BOOLEAN), sort_order |
 | `dataset_row` | 행 1줄 | dataset_id, row_index, data_json(`{"col_0": ..., "col_1": ...}`) |
 
@@ -64,7 +64,7 @@ dgjs_2.0/
 ### 파일 적재 (엑셀/CSV)
 1. **미리보기** — 파일 선택 시 `POST /api/preview`. 헤더로 `col_i` 키를 만들고, 상위 10행을 읽어 열마다 타입을 추정(전부 숫자면 NUMBER, 아니면 STRING)하고, 중복 헤더 등 구조 문제를 검증한다.
 2. **스키마 확정** — 사용자가 컬럼명/타입을 수정한 뒤 `POST /api/upload-async` (file + metadata JSON).
-3. **비동기 적재** — 컨트롤러가 파일을 바이트 배열로 읽고 `@Async` 메서드에 넘긴 뒤 즉시 taskId를 응답한다. 백그라운드 스레드가 meta → column → 행(500건 단위)을 저장하며 `UploadTaskService`에 진행률을 기록한다.
+3. **비동기 적재** — 컨트롤러가 파일을 바이트 배열로 읽고, `UploadTaskService.initTask`로 작업을 먼저 등록한 뒤 `@Async` 메서드에 넘기고 즉시 taskId를 응답한다. 백그라운드 스레드가 meta(status=PROCESSING) → column → 행(500건 단위)을 저장하며 진행률을 기록하고, 완료 시 status를 READY로 바꾼다. 실패하면 저장된 meta/column/row를 삭제한다(삭제마저 실패하면 FAILED로 남김). 목록·상세 조회는 READY(또는 NULL)만 노출한다.
 4. **진행률 폴링** — 프론트가 1초마다 `GET /api/tasks/{taskId}/progress`를 호출해 진행률을 표시하고, COMPLETED면 상세 페이지로 이동한다.
 
 ### 상세 조회
