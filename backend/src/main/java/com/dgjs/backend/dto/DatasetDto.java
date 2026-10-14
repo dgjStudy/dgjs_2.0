@@ -40,7 +40,6 @@ public class DatasetDto {
         private String orgId;
         private LocalDateTime createdAt;
         private List<ColumnResponse> columns;
-        private List<Map<String, Object>> rows;
     }
 
     @Data

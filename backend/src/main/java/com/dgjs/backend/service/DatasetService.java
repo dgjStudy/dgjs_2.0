@@ -8,6 +8,7 @@ import com.dgjs.backend.domain.DatasetRow;
 import com.dgjs.backend.dto.DatasetDto;
 import com.dgjs.backend.dto.SchemaPreviewDto;
 import com.dgjs.backend.repository.DatasetColumnRepository;
+import com.dgjs.backend.repository.DatasetCount;
 import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.DatasetRowRepository;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ import org.apache.poi.ss.usermodel.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,26 +42,33 @@ public class DatasetService {
     private final DatasetRowRepository rowRepository;
     private final UploadTaskService uploadTaskService;
     private final TransactionTemplate transactionTemplate;
+    private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional(readOnly = true)
     public List<DatasetDto.SummaryResponse> getAllDatasets() {
         List<DatasetMeta> metaList = metaRepository.findAllReadyOrderByCreatedAtDesc();
-        return metaList.stream().map(meta -> {
-            long rowCount = rowRepository.countByDatasetId(meta.getId());
-            int columnCount = columnRepository.findByDatasetIdOrderBySortOrderAsc(meta.getId()).size();
-            return DatasetDto.SummaryResponse.builder()
-                    .id(meta.getId())
-                    .name(meta.getName())
-                    .description(meta.getDescription())
-                    .category(meta.getCategory())
-                    .ownerId(meta.getOwnerId())
-                    .orgId(meta.getOrgId())
-                    .createdAt(meta.getCreatedAt())
-                    .rowCount(rowCount)
-                    .columnCount(columnCount)
-                    .build();
-        }).collect(Collectors.toList());
+        if (metaList.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> ids = metaList.stream().map(DatasetMeta::getId).collect(Collectors.toList());
+        Map<Long, Long> rowCounts = rowRepository.countGroupByDatasetId(ids).stream()
+                .collect(Collectors.toMap(DatasetCount::getDatasetId, DatasetCount::getCnt));
+        Map<Long, Long> columnCounts = columnRepository.countGroupByDatasetId(ids).stream()
+                .collect(Collectors.toMap(DatasetCount::getDatasetId, DatasetCount::getCnt));
+
+        return metaList.stream().map(meta -> DatasetDto.SummaryResponse.builder()
+                .id(meta.getId())
+                .name(meta.getName())
+                .description(meta.getDescription())
+                .category(meta.getCategory())
+                .ownerId(meta.getOwnerId())
+                .orgId(meta.getOrgId())
+                .createdAt(meta.getCreatedAt())
+                .rowCount(rowCounts.getOrDefault(meta.getId(), 0L))
+                .columnCount(columnCounts.getOrDefault(meta.getId(), 0L).intValue())
+                .build()).collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -71,7 +80,6 @@ public class DatasetService {
         }
 
         List<DatasetColumn> columns = columnRepository.findByDatasetIdOrderBySortOrderAsc(datasetId);
-        List<DatasetRow> rows = rowRepository.findByDatasetIdOrderByRowIndexAsc(datasetId);
 
         List<DatasetDto.ColumnResponse> columnResponses = columns.stream()
                 .map(col -> DatasetDto.ColumnResponse.builder()
@@ -80,16 +88,6 @@ public class DatasetService {
                         .dataType(col.getDataType())
                         .build())
                 .collect(Collectors.toList());
-
-        List<Map<String, Object>> rowMaps = rows.stream().map(row -> {
-            try {
-                Map<String, Object> map = objectMapper.readValue(row.getDataJson(), new TypeReference<Map<String, Object>>() {});
-                map.put("key", row.getId());
-                return map;
-            } catch (Exception e) {
-                return new HashMap<String, Object>();
-            }
-        }).collect(Collectors.toList());
 
         return DatasetDto.DetailResponse.builder()
                 .id(meta.getId())
@@ -100,7 +98,6 @@ public class DatasetService {
                 .orgId(meta.getOrgId())
                 .createdAt(meta.getCreatedAt())
                 .columns(columnResponses)
-                .rows(rowMaps)
                 .build();
     }
 
@@ -294,7 +291,7 @@ public class DatasetService {
                                 .build());
 
                         if (chunkList.size() >= CHUNK_SIZE) {
-                            rowRepository.saveAll(chunkList);
+                            insertRows(chunkList);
                             chunkList.clear();
                         }
 
@@ -306,7 +303,7 @@ public class DatasetService {
                     }
 
                     if (!chunkList.isEmpty()) {
-                        rowRepository.saveAll(chunkList);
+                        insertRows(chunkList);
                         chunkList.clear();
                     }
 
@@ -351,7 +348,7 @@ public class DatasetService {
                                     .build());
 
                             if (chunkList.size() >= CHUNK_SIZE) {
-                                rowRepository.saveAll(chunkList);
+                                insertRows(chunkList);
                                 chunkList.clear();
                             }
                         }
@@ -364,7 +361,7 @@ public class DatasetService {
                     }
 
                     if (!chunkList.isEmpty()) {
-                        rowRepository.saveAll(chunkList);
+                        insertRows(chunkList);
                         chunkList.clear();
                     }
 
@@ -375,6 +372,17 @@ public class DatasetService {
             cleanupFailedUpload(datasetId);
             uploadTaskService.failTask(taskId, e.getMessage());
         }
+    }
+
+    // IDENTITY 키 전략에서는 saveAll도 건별 insert가 되므로 JDBC 배치를 직접 사용
+    private void insertRows(List<DatasetRow> rows) {
+        jdbcTemplate.batchUpdate(
+                "insert into dataset_row (dataset_id, row_index, data_json) values (?, ?, ?)",
+                rows, rows.size(), (ps, row) -> {
+                    ps.setLong(1, row.getDatasetId());
+                    ps.setInt(2, row.getRowIndex());
+                    ps.setString(3, row.getDataJson());
+                });
     }
 
     private void finishUpload(String taskId, Long datasetId) {

@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "dataset_column")
+@Table(name = "dataset_column", indexes = @Index(name = "idx_dataset_column_dataset_id", columnList = "dataset_id"))
 @Getter
 @Setter
 @NoArgsConstructor
