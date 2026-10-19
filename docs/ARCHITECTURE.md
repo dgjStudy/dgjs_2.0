@@ -26,6 +26,7 @@ dgjs_2.0/
 │       └─ dto/
 │           ├─ DatasetDto         목록/상세/페이징/CRUD 요청·응답
 │           └─ SchemaPreviewDto   미리보기 응답, 최종 업로드 요청, 진행률 응답
+│   └─ src/test/java/com/dgjs/backend/   단위 테스트 (행 검증, CSV·엑셀 파싱, 업로드 검증, 작업 정리, 오류 응답). contextLoads만 MySQL 필요
 └─ frontend/                  React 19 / Vite / antd 6 / react-router 7
     └─ src/
         ├─ main.jsx               엔트리

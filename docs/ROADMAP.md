@@ -32,7 +32,7 @@
 - [ ] **18. API URL 하드코딩** — Vite `server.proxy` + 상대경로 `/api`.
 - [ ] **19. antd v6 deprecated API** — `Space direction`, `Alert message`, `Spin tip` 등.
 - [x] **20. 미사용 코드** — `/api/upload` 동기 업로드, `uploadDatasetFile`, `UploadRequest` DTO.
-- [ ] **21. 테스트 부재** — `contextLoads`만 존재(MySQL 필요). 셀 변환·CSV 파싱·스키마 검증 단위 테스트 추가.
+- [x] **21. 테스트 부재** — `contextLoads`만 존재(MySQL 필요). 셀 변환·CSV 파싱·스키마 검증 단위 테스트 추가. → JUnit 5 단위 테스트 54개(DB 불필요) 추가.
 
 ## 검증 시나리오
 1. 수식/날짜/정수 포함 xlsx 업로드 → 그리드 값 확인
