@@ -1,5 +1,6 @@
 package com.dgjs.backend.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dgjs.backend.domain.DatasetColumn;
@@ -12,9 +13,11 @@ import com.dgjs.backend.repository.DatasetCount;
 import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.DatasetRowRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.apache.poi.EncryptedDocumentException;
 import org.apache.poi.ss.usermodel.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +36,7 @@ import java.nio.charset.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DatasetService {
@@ -74,9 +78,9 @@ public class DatasetService {
     @Transactional(readOnly = true)
     public DatasetDto.DetailResponse getDatasetDetail(Long datasetId) {
         DatasetMeta meta = metaRepository.findById(datasetId)
-                .orElseThrow(() -> new IllegalArgumentException("Dataset not found: " + datasetId));
+                .orElseThrow(() -> datasetNotFound(datasetId));
         if (meta.getStatus() != null && !DatasetMeta.STATUS_READY.equals(meta.getStatus())) {
-            throw new IllegalArgumentException("Dataset not found: " + datasetId);
+            throw datasetNotFound(datasetId);
         }
 
         List<DatasetColumn> columns = columnRepository.findByDatasetIdOrderBySortOrderAsc(datasetId);
@@ -125,7 +129,7 @@ public class DatasetService {
                 .build();
     }
 
-    public SchemaPreviewDto.Response previewAndValidate(MultipartFile file) throws Exception {
+    public SchemaPreviewDto.Response previewAndValidate(MultipartFile file) throws IOException {
         if (isCsvFile(file.getOriginalFilename())) {
             return previewAndValidateCsv(file);
         }
@@ -221,6 +225,8 @@ public class DatasetService {
                     .previewRows(previewRows)
                     .totalPreviewRows(previewRows.size())
                     .build();
+        } catch (IOException | EncryptedDocumentException e) {
+            throw new IllegalArgumentException("엑셀 파일을 읽을 수 없습니다. 파일 형식과 암호 설정을 확인해 주세요.");
         }
     }
 
@@ -369,8 +375,9 @@ public class DatasetService {
                 }
             }
         } catch (Exception e) {
+            log.error("비동기 적재 실패 (taskId={})", taskId, e);
             cleanupFailedUpload(datasetId);
-            uploadTaskService.failTask(taskId, e.getMessage());
+            uploadTaskService.failTask(taskId, e instanceof IllegalArgumentException ? e.getMessage() : "서버 내부 오류가 발생했습니다.");
         }
     }
 
@@ -410,81 +417,6 @@ public class DatasetService {
         rowRepository.deleteByDatasetId(datasetId);
         columnRepository.deleteByDatasetId(datasetId);
         metaRepository.deleteById(datasetId);
-    }
-
-    @Transactional
-    public Long uploadDataset(MultipartFile file, DatasetDto.UploadRequest request) throws Exception {
-        DatasetMeta meta = DatasetMeta.builder()
-                .name(request.getName())
-                .description(request.getDescription())
-                .category(request.getCategory() != null ? request.getCategory() : "기타")
-                .ownerId(request.getOwnerId() != null ? request.getOwnerId() : "user_admin")
-                .orgId(request.getOrgId() != null ? request.getOrgId() : "org_hq")
-                .build();
-
-        meta = metaRepository.save(meta);
-        Long datasetId = meta.getId();
-
-        try (InputStream is = file.getInputStream(); Workbook workbook = WorkbookFactory.create(is)) {
-            Sheet sheet = workbook.getSheetAt(0);
-            Iterator<Row> rowIterator = sheet.iterator();
-
-            if (!rowIterator.hasNext()) {
-                throw new IllegalArgumentException("엑셀 파일이 비어 있습니다.");
-            }
-
-            Row headerRow = rowIterator.next();
-            List<String> headers = new ArrayList<>();
-            List<DatasetColumn> columns = new ArrayList<>();
-
-            for (int i = 0; i < headerRow.getLastCellNum(); i++) {
-                Cell cell = headerRow.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                String columnName = cell != null ? cell.toString().trim() : "Column_" + (i + 1);
-                String columnKey = "col_" + i;
-
-                headers.add(columnKey);
-
-                columns.add(DatasetColumn.builder()
-                        .datasetId(datasetId)
-                        .columnKey(columnKey)
-                        .columnName(columnName)
-                        .dataType("STRING")
-                        .sortOrder(i)
-                        .build());
-            }
-
-            columnRepository.saveAll(columns);
-
-            List<DatasetRow> datasetRows = new ArrayList<>();
-            int rowIndex = 0;
-
-            while (rowIterator.hasNext()) {
-                Row row = rowIterator.next();
-                Map<String, Object> rowMap = new LinkedHashMap<>();
-                boolean isEmptyRow = true;
-
-                for (int i = 0; i < headers.size(); i++) {
-                    Cell cell = row.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                    Object cellValue = getCellValue(cell);
-                    if (cellValue != null && !cellValue.toString().trim().isEmpty()) {
-                        isEmptyRow = false;
-                    }
-                    rowMap.put(headers.get(i), cellValue != null ? cellValue : "");
-                }
-
-                if (!isEmptyRow) {
-                    datasetRows.add(DatasetRow.builder()
-                            .datasetId(datasetId)
-                            .rowIndex(rowIndex++)
-                            .dataJson(objectMapper.writeValueAsString(rowMap))
-                            .build());
-                }
-            }
-
-            rowRepository.saveAll(datasetRows);
-        }
-
-        return datasetId;
     }
 
     @Transactional
@@ -618,7 +550,7 @@ public class DatasetService {
         return values.stream().allMatch(String::isEmpty);
     }
 
-    public SchemaPreviewDto.Response previewAndValidateCsv(MultipartFile file) throws Exception {
+    public SchemaPreviewDto.Response previewAndValidateCsv(MultipartFile file) throws IOException {
         List<String> warnings = new ArrayList<>();
         boolean valid = true;
 
@@ -720,7 +652,7 @@ public class DatasetService {
     @Transactional
     public void updateDatasetMeta(Long id, DatasetDto.MetaUpdateRequest request) {
         DatasetMeta meta = metaRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Dataset not found: " + id));
+                .orElseThrow(() -> datasetNotFound(id));
         if (request.getName() != null && !request.getName().trim().isEmpty()) {
             meta.setName(request.getName().trim());
         }
@@ -734,9 +666,9 @@ public class DatasetService {
     }
 
     @Transactional
-    public Long addRow(Long datasetId, Map<String, Object> rowData) throws Exception {
+    public Long addRow(Long datasetId, Map<String, Object> rowData) throws JsonProcessingException {
         metaRepository.findById(datasetId)
-                .orElseThrow(() -> new IllegalArgumentException("Dataset not found: " + datasetId));
+                .orElseThrow(() -> datasetNotFound(datasetId));
 
         int nextIndex = rowRepository.findFirstByDatasetIdOrderByRowIndexDesc(datasetId)
                 .map(r -> r.getRowIndex() + 1)
@@ -755,9 +687,9 @@ public class DatasetService {
     }
 
     @Transactional
-    public void updateRow(Long datasetId, Long rowId, Map<String, Object> rowData) throws Exception {
+    public void updateRow(Long datasetId, Long rowId, Map<String, Object> rowData) throws JsonProcessingException {
         DatasetRow row = rowRepository.findByIdAndDatasetId(rowId, datasetId)
-                .orElseThrow(() -> new IllegalArgumentException("Row not found: " + rowId));
+                .orElseThrow(() -> rowNotFound(rowId));
 
         Map<String, Object> cleanMap = new HashMap<>(rowData);
         cleanMap.remove("key");
@@ -769,8 +701,16 @@ public class DatasetService {
     @Transactional
     public void deleteRow(Long datasetId, Long rowId) {
         DatasetRow row = rowRepository.findByIdAndDatasetId(rowId, datasetId)
-                .orElseThrow(() -> new IllegalArgumentException("Row not found: " + rowId));
+                .orElseThrow(() -> rowNotFound(rowId));
         rowRepository.delete(row);
+    }
+
+    private ResourceNotFoundException datasetNotFound(Long datasetId) {
+        return new ResourceNotFoundException("데이터셋을 찾을 수 없습니다. (ID: " + datasetId + ")");
+    }
+
+    private ResourceNotFoundException rowNotFound(Long rowId) {
+        return new ResourceNotFoundException("데이터 행을 찾을 수 없습니다. (ID: " + rowId + ")");
     }
 }
 

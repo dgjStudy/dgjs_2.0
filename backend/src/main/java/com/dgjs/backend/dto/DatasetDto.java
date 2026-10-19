@@ -55,17 +55,6 @@ public class DatasetDto {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class UploadRequest {
-        private String name;
-        private String description;
-        private String category;
-        private String ownerId;
-        private String orgId;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     public static class ManualCreateRequest {
         private String name;
         private String description;
