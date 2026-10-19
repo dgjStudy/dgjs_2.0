@@ -10,13 +10,16 @@ dgjs_2.0/
 │   └─ src/main/java/com/dgjs/backend/
 │       ├─ config/
 │       │   ├─ AsyncConfig        @EnableAsync (비동기 적재)
+│       │   ├─ SchedulingConfig   @EnableScheduling (종료된 작업 정리)
+│       │   ├─ GlobalExceptionHandler  @RestControllerAdvice, 오류 응답 통일
 │       │   ├─ WebConfig          CORS 허용 (localhost:5173, 3000)
 │       │   └─ OpenApiConfig      Swagger 문서 메타정보
 │       ├─ controller/
 │       │   └─ DatasetController  모든 REST API (/api/**)
 │       ├─ service/
 │       │   ├─ DatasetService     파일 파싱(엑셀/CSV), 미리보기·검증, 비동기 적재, 데이터셋/행 CRUD
-│       │   └─ UploadTaskService  비동기 적재 진행률을 taskId별로 메모리에 보관
+│       │   ├─ UploadTaskService  비동기 적재 진행률을 taskId별로 메모리에 보관, 종료 10분 뒤 정리
+│       │   └─ ResourceNotFoundException  대상 없음(404) 예외
 │       ├─ domain/                JPA 엔티티 (DatasetMeta, DatasetColumn, DatasetRow)
 │       ├─ repository/            Spring Data JPA Repository
 │       └─ dto/
@@ -54,10 +57,20 @@ dgjs_2.0/
 | POST | /api/preview | 파일 → 헤더, 샘플 10행, 타입 추정, 구조 검증 |
 | POST | /api/upload-async | 파일 + 확정 스키마 → 비동기 적재 시작, taskId 반환 |
 | GET | /api/tasks/{taskId}/progress | 적재 진행률 조회 |
-| POST | /api/upload | 동기 업로드 (구버전, 프론트 미사용) |
 | POST | /api/datasets/manual | 수동 스키마로 빈 데이터셋 생성 |
 | PUT / DELETE | /api/datasets/{id} | 메타 수정 / 데이터셋 삭제 |
 | POST / PUT / DELETE | /api/datasets/{id}/rows[/{rowId}] | 행 추가 / 수정 / 삭제 |
+
+### 오류 응답
+- 전역 처리는 `GlobalExceptionHandler`가 한다. 컨트롤러에는 try/catch를 두지 않는다.
+- 본문은 항상 `{ "message": "한국어 메시지" }`이다.
+
+| 상태 | 대상 |
+|---|---|
+| 400 | `IllegalArgumentException`(검증 실패), JSON 형식 오류, 필수 요청 값·파트 누락, 파일 크기 초과, 요청 값 형식 오류 |
+| 404 | `ResourceNotFoundException`(데이터셋·행 없음), 존재하지 않는 경로 |
+| 405 | 지원하지 않는 HTTP 메서드 |
+| 500 | 그 밖의 예외. 상세는 서버 로그에만 남기고 일반 문구로 응답 |
 
 ## 주요 흐름
 
@@ -65,7 +78,7 @@ dgjs_2.0/
 1. **미리보기** — 파일 선택 시 `POST /api/preview`. 헤더로 `col_i` 키를 만들고, 상위 10행을 읽어 열마다 타입을 추정(전부 숫자면 NUMBER, 아니면 STRING)하고, 빈 헤더·빈 파일 등 구조 문제를 검증한다. 중복 컬럼명은 Step1에서 수정 가능하므로 막지 않고, 프론트가 현재 스키마 기준으로 실시간 검증하며 서버도 `POST /api/upload-async`에서 컬럼명(빈 값·중복)·컬럼 키를 재검증한다(400). CSV는 Apache Commons CSV로 파싱하며(따옴표 안 줄바꿈·`""` 이스케이프 지원) UTF-8 엄격 검사에 실패하면 MS949로 읽고 BOM은 제거한다.
 2. **스키마 확정** — 사용자가 컬럼명/타입을 수정한 뒤 `POST /api/upload-async` (file + metadata JSON).
 3. **비동기 적재** — 컨트롤러가 파일을 바이트 배열로 읽고, `UploadTaskService.initTask`로 작업을 먼저 등록한 뒤 `@Async` 메서드에 넘기고 즉시 taskId를 응답한다. 백그라운드 스레드가 meta(status=PROCESSING) → column → 행(500건 단위, `JdbcTemplate.batchUpdate`)을 저장하며 진행률을 기록하고, 완료 시 status를 READY로 바꾼다. 실패하면 저장된 meta/column/row를 삭제한다(삭제마저 실패하면 FAILED로 남김). 목록·상세 조회는 READY(또는 NULL)만 노출한다.
-4. **진행률 폴링** — 프론트가 1초마다 `GET /api/tasks/{taskId}/progress`를 호출해 진행률을 표시하고, COMPLETED면 상세 페이지로 이동한다.
+4. **진행률 폴링** — 프론트가 1초마다 `GET /api/tasks/{taskId}/progress`를 호출해 진행률을 표시하고, COMPLETED면 상세 페이지로 이동한다. 완료·실패한 작업은 10분 뒤 메모리에서 제거되며(1분 주기), 이후 조회하면 "존재하지 않는 작업 ID"(FAILED)로 응답한다.
 
 ### 상세 조회
 `GET /api/datasets/{id}`(메타·컬럼) + `GET /api/datasets/{id}/rows`(현재 페이지)를 조합한다. 행 응답에는 `key = row_id`가 붙어 행 수정/삭제에 쓰인다.

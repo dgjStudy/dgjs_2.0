@@ -25,13 +25,13 @@
 - [ ] **12. (후속) 대용량 xlsx 메모리** — `getBytes()` + DOM 방식 파싱. 스트리밍 파서 검토.
 
 ## 🟡 P3 — 구조 / 유지보수
-- [ ] **14. 에러 처리 통일** — 모든 예외가 400, not-found는 500. → `@RestControllerAdvice`.
+- [x] **14. 에러 처리 통일** — 모든 예외가 400, not-found는 500. → `@RestControllerAdvice`.
 - [ ] **15. 행 CRUD 스키마 검증 없음** — 스키마 밖 키 저장, 타입 미검증. → 컬럼 키 화이트리스트 + 타입 변환/검증.
-- [ ] **16. UploadTaskService 메모리 누수** — 완료 작업이 맵에서 제거되지 않음.
+- [x] **16. UploadTaskService 메모리 누수** — 완료 작업이 맵에서 제거되지 않음. → 종료 10분 뒤 스케줄러가 제거.
 - [ ] **17. App.jsx 1237줄 단일 파일** — 페이지/모달/상수 분리. 카테고리·타입 옵션 중복, 엑셀 탭 '기타' 누락.
 - [ ] **18. API URL 하드코딩** — Vite `server.proxy` + 상대경로 `/api`.
 - [ ] **19. antd v6 deprecated API** — `Space direction`, `Alert message`, `Spin tip` 등.
-- [ ] **20. 미사용 코드** — `/api/upload` 동기 업로드, `uploadDatasetFile`, `UploadRequest` DTO.
+- [x] **20. 미사용 코드** — `/api/upload` 동기 업로드, `uploadDatasetFile`, `UploadRequest` DTO.
 - [ ] **21. 테스트 부재** — `contextLoads`만 존재(MySQL 필요). 셀 변환·CSV 파싱·스키마 검증 단위 테스트 추가.
 
 ## 검증 시나리오
