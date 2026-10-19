@@ -66,7 +66,11 @@ public class UploadTaskService {
 
     @Scheduled(fixedDelay = 60_000)
     public void removeExpiredTasks() {
-        Instant threshold = Instant.now().minus(FINISHED_TASK_TTL);
+        removeExpiredTasks(Instant.now());
+    }
+
+    void removeExpiredTasks(Instant now) {
+        Instant threshold = now.minus(FINISHED_TASK_TTL);
         finishedAtMap.entrySet().removeIf(entry -> {
             if (entry.getValue().isBefore(threshold)) {
                 taskMap.remove(entry.getKey());
