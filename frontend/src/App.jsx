@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   Layout,
@@ -198,7 +198,7 @@ const DataListPage = () => {
   ];
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
       <Breadcrumb items={[{ title: '홈' }, { title: '데이터셋 목록' }]} />
       <Card
         title={
@@ -287,7 +287,7 @@ const DataDetailPage = () => {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
-        <Spin size="large" tip="데이터셋 정보를 불러오는 중..." />
+        <Spin size="large" description="데이터셋 정보를 불러오는 중..." />
       </div>
     );
   }
@@ -402,11 +402,11 @@ const DataDetailPage = () => {
         <Typography.Text strong>컬럼 표시 설정</Typography.Text>
         <Space size="small">
           <Button type="link" size="small" onClick={handleSelectAllColumns} style={{ padding: 0 }}>전체 선택</Button>
-          <Divider type="vertical" />
+          <Divider orientation="vertical" />
           <Button type="link" size="small" onClick={handleDeselectAllColumns} style={{ padding: 0 }}>기본 1개만</Button>
         </Space>
       </div>
-      <Space direction="vertical" style={{ width: '100%' }}>
+      <Space orientation="vertical" style={{ width: '100%' }}>
         {allColumns.map((col) => (
           <Checkbox
             key={col.key}
@@ -472,7 +472,7 @@ const DataDetailPage = () => {
   ];
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
       <Breadcrumb
         items={[
           { title: <a onClick={() => navigate('/data')}>데이터셋 목록</a> },
@@ -870,7 +870,7 @@ const DataUploadPage = () => {
   }));
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
       <Breadcrumb items={[{ title: '홈' }, { title: '데이터 적재 및 스키마 정의' }]} />
 
       <Card title={<Title level={4} style={{ margin: 0 }}>신규 데이터 적재 및 동적 스키마 정의</Title>}>
@@ -948,7 +948,7 @@ const DataUploadPage = () => {
               >
                 <Form.List name="columns">
                   {(fields, { add, remove }) => (
-                    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                    <Space orientation="vertical" style={{ width: '100%' }} size="middle">
                       {fields.map(({ key, name, ...restField }, index) => (
                         <Space key={key} style={{ display: 'flex', alignItems: 'center' }} align="baseline">
                           <Tag color="blue" style={{ minWidth: 40, textAlign: 'center' }}>
@@ -1027,7 +1027,7 @@ const DataUploadPage = () => {
             />
 
         {currentStep === 0 && (
-          <Spin spinning={parsing} tip="엑셀 파일 분석 및 미리보기 파싱 중...">
+          <Spin spinning={parsing} description="엑셀 파일 분석 및 미리보기 파싱 중...">
             <Form
               form={form}
               layout="vertical"
@@ -1086,7 +1086,7 @@ const DataUploadPage = () => {
         )}
 
         {currentStep === 1 && (
-          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          <Space orientation="vertical" size="large" style={{ width: '100%' }}>
             {schemaInvalid && (
               <Alert
                 title="컬럼명을 수정해 주세요."
@@ -1104,7 +1104,7 @@ const DataUploadPage = () => {
             )}
             {previewData && !previewData.valid ? (
               <Alert
-                message="DB 적재 제한 / 데이터 구조 주의사항"
+                title="DB 적재 제한 / 데이터 구조 주의사항"
                 description={
                   <div>
                     {previewData.warnings && previewData.warnings.map((w, idx) => (
@@ -1120,7 +1120,7 @@ const DataUploadPage = () => {
               />
             ) : previewData && previewData.warnings && previewData.warnings.length > 0 ? (
               <Alert
-                message="자동 스키마 보정 안내"
+                title="자동 스키마 보정 안내"
                 description={
                   <div>
                     {previewData.warnings.map((w, idx) => (
@@ -1133,7 +1133,7 @@ const DataUploadPage = () => {
               />
             ) : (
               <Alert
-                message="정형 DB 적재가 가능한 파일 구조입니다."
+                title="정형 DB 적재가 가능한 파일 구조입니다."
                 description="추정된 컬럼 데이터 타입을 검토 및 수정하신 후 [비동기 적재 시작]을 클릭하세요."
                 type="success"
                 showIcon

@@ -25,7 +25,7 @@
 
 ## API 호출
 - 백엔드 호출은 `src/api/` 의 함수로만 한다 (컴포넌트에서 직접 fetch 금지)
-- Base URL을 하드코딩하지 않는다. Vite `server.proxy`로 `/api`를 백엔드(8080)에 넘기고 상대경로 `/api/...`를 쓴다 (기존 하드코딩은 추후 정리 예정).
+- Base URL을 하드코딩하지 않는다. Vite `server.proxy`로 `/api`를 백엔드(8080)에 넘기고 상대경로 `/api/...`를 쓴다.
 - API 함수는 실패 시 `Error`를 throw한다. 백엔드 오류 응답에 `message`가 있으면 그것을 `Error.message`로 쓴다.
 - 호출하는 쪽(페이지/컴포넌트)에서 `try/catch` 후 antd `message.error(...)`로 사용자에게 알린다. 빈 `catch` 금지.
 - mock 사용자값(`user_admin`, `org_hq`)은 `constants/` 한 곳에서만 정의한다.
