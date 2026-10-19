@@ -45,6 +45,7 @@ public class DatasetService {
     private final DatasetColumnRepository columnRepository;
     private final DatasetRowRepository rowRepository;
     private final UploadTaskService uploadTaskService;
+    private final RowDataValidator rowDataValidator;
     private final TransactionTemplate transactionTemplate;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -667,20 +668,24 @@ public class DatasetService {
 
     @Transactional
     public Long addRow(Long datasetId, Map<String, Object> rowData) throws JsonProcessingException {
-        metaRepository.findById(datasetId)
+        DatasetMeta meta = metaRepository.findById(datasetId)
                 .orElseThrow(() -> datasetNotFound(datasetId));
+        // 적재 중이거나 실패한 데이터셋에 행을 넣으면 배치 적재의 행 번호와 충돌할 수 있음
+        if (meta.getStatus() != null && !DatasetMeta.STATUS_READY.equals(meta.getStatus())) {
+            throw datasetNotFound(datasetId);
+        }
+
+        List<DatasetColumn> columns = columnRepository.findByDatasetIdOrderBySortOrderAsc(datasetId);
+        Map<String, Object> validated = rowDataValidator.validate(columns, rowData, null);
 
         int nextIndex = rowRepository.findFirstByDatasetIdOrderByRowIndexDesc(datasetId)
                 .map(r -> r.getRowIndex() + 1)
                 .orElse(0);
 
-        Map<String, Object> cleanMap = new HashMap<>(rowData);
-        cleanMap.remove("key");
-
         DatasetRow row = DatasetRow.builder()
                 .datasetId(datasetId)
                 .rowIndex(nextIndex)
-                .dataJson(objectMapper.writeValueAsString(cleanMap))
+                .dataJson(objectMapper.writeValueAsString(validated))
                 .build();
 
         return rowRepository.save(row).getId();
@@ -691,10 +696,11 @@ public class DatasetService {
         DatasetRow row = rowRepository.findByIdAndDatasetId(rowId, datasetId)
                 .orElseThrow(() -> rowNotFound(rowId));
 
-        Map<String, Object> cleanMap = new HashMap<>(rowData);
-        cleanMap.remove("key");
+        List<DatasetColumn> columns = columnRepository.findByDatasetIdOrderBySortOrderAsc(datasetId);
+        Map<String, Object> existing = objectMapper.readValue(row.getDataJson(), new TypeReference<Map<String, Object>>() {});
+        Map<String, Object> validated = rowDataValidator.validate(columns, rowData, existing);
 
-        row.setDataJson(objectMapper.writeValueAsString(cleanMap));
+        row.setDataJson(objectMapper.writeValueAsString(validated));
         rowRepository.save(row);
     }
 
