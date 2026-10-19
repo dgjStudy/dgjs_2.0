@@ -19,6 +19,7 @@ dgjs_2.0/
 │       ├─ service/
 │       │   ├─ DatasetService     파일 파싱(엑셀/CSV), 미리보기·검증, 비동기 적재, 데이터셋/행 CRUD
 │       │   ├─ UploadTaskService  비동기 적재 진행률을 taskId별로 메모리에 보관, 종료 10분 뒤 정리
+│       │   ├─ RowDataValidator   행 추가·수정 시 스키마 키·타입 검증 및 변환
 │       │   └─ ResourceNotFoundException  대상 없음(404) 예외
 │       ├─ domain/                JPA 엔티티 (DatasetMeta, DatasetColumn, DatasetRow)
 │       ├─ repository/            Spring Data JPA Repository
@@ -82,6 +83,20 @@ dgjs_2.0/
 
 ### 상세 조회
 `GET /api/datasets/{id}`(메타·컬럼) + `GET /api/datasets/{id}/rows`(현재 페이지)를 조합한다. 행 응답에는 `key = row_id`가 붙어 행 수정/삭제에 쓰인다.
+
+### 행 추가·수정 검증
+`POST/PUT /api/datasets/{id}/rows[/{rowId}]`는 저장 전에 `RowDataValidator`가 컬럼 정의(`dataset_column`)로 검증·변환한다. 실패하면 400, 적재 중이거나 실패한 데이터셋에 추가하면 404이다.
+- 스키마에 없는 키는 거부한다(`key`는 무시).
+- 빈 값(null, 공백)은 모든 타입에서 `""`로 저장한다.
+
+| 타입 | 허용 | 저장 형태 |
+|---|---|---|
+| STRING | 문자·숫자·불리언 | 문자열 (객체·배열 거부) |
+| NUMBER | 숫자, 숫자로 읽히는 문자열 (`"1,000"`은 거부) | 정수는 long, 그 외 double |
+| DATE | `yyyy-MM-dd`, `yyyy-MM-ddTHH:mm`, `yyyy-MM-dd HH:mm` | ISO 문자열 (자정이면 날짜만) |
+| BOOLEAN | true/false, `"true"`/`"false"` (대소문자 무시) | 불리언 |
+
+수정 시에는 기존 값과 같은 컬럼은 검증하지 않고 기존 값을 유지한다. 과거 적재 데이터에 형식이 맞지 않는 값이 있어도 다른 컬럼을 수정할 수 있게 하기 위함이다.
 
 ### 수동 생성
 컬럼 정의만으로 meta + column을 저장(행 0개)하고, 상세 페이지에서 행을 추가한다.
