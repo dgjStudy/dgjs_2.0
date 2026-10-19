@@ -34,7 +34,7 @@ dgjs_2.0/
         │   ├─ DataListPage       /, /data      데이터셋 목록·삭제
         │   ├─ DataDetailPage     /data/:id     메타 정보, 서버 페이징 그리드, 컬럼 표시 토글, 메타 수정, 행 CRUD
         │   └─ DataUploadPage     /upload       ① 엑셀/CSV 3단계 적재  ② 수동 스키마 설계
-        └─ api/datasetApi.js      백엔드 호출 fetch 래퍼
+        └─ api/datasetApi.js      백엔드 호출 fetch 래퍼 (상대경로 /api, 개발 서버는 vite.config.js의 server.proxy가 localhost:8080으로 전달)
 ```
 
 ## 데이터 모델
