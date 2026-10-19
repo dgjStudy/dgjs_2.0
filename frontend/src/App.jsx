@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import {
-  Layout,
-  Menu,
   Table,
   Button,
   Card,
@@ -28,8 +26,6 @@ import {
   Modal,
 } from 'antd';
 import {
-  DatabaseOutlined,
-  UploadOutlined,
   FileExcelOutlined,
   ArrowLeftOutlined,
   EyeOutlined,
@@ -40,10 +36,8 @@ import {
   EditOutlined,
 } from '@ant-design/icons';
 import {
-  fetchDatasets,
   fetchDatasetDetail,
   fetchDatasetRows,
-  deleteDataset,
   previewDatasetFile,
   uploadDatasetAsync,
   fetchTaskProgress,
@@ -53,177 +47,14 @@ import {
   updateDatasetRow,
   deleteDatasetRow,
 } from './api/datasetApi';
+import MainLayout from './components/MainLayout';
+import DatasetListPage from './pages/DatasetListPage';
+import { CATEGORY_OPTIONS, DEFAULT_CATEGORY } from './constants/category';
+import { DATA_TYPE_OPTIONS, DEFAULT_DATA_TYPE } from './constants/dataType';
+import { MOCK_OWNER_ID, MOCK_ORG_ID } from './constants/mockUser';
 
 
-const { Header, Content } = Layout;
 const { Title, Text } = Typography;
-
-// App Layout Wrapper
-const MainLayout = ({ children }) => {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const getSelectedKey = () => {
-    if (location.pathname.startsWith('/data')) return '/data';
-    if (location.pathname === '/upload') return '/upload';
-    return '/data';
-  };
-
-  return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', background: '#001529', padding: '0 24px' }}>
-        <div style={{ color: '#fff', fontSize: '18px', fontWeight: 'bold', marginRight: '40px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <DatabaseOutlined style={{ color: '#1890ff', fontSize: '22px' }} />
-          <span>DGJS 2.0 Platform</span>
-        </div>
-        <Menu
-          theme="dark"
-          mode="horizontal"
-          selectedKeys={[getSelectedKey()]}
-          style={{ flex: 1, minWidth: 0 }}
-          items={[
-            { key: '/data', icon: <DatabaseOutlined />, label: '전체 데이터셋 목록', onClick: () => navigate('/data') },
-            { key: '/upload', icon: <UploadOutlined />, label: '데이터 적재 및 스키마 정의', onClick: () => navigate('/upload') },
-          ]}
-        />
-      </Header>
-      <Content style={{ padding: '24px 48px', background: '#f0f2f5' }}>
-        {children}
-      </Content>
-    </Layout>
-  );
-};
-
-// 1. /data - Dataset List View
-const DataListPage = () => {
-  const navigate = useNavigate();
-  const [datasets, setDatasets] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const data = await fetchDatasets();
-      setDatasets(data);
-    } catch (err) {
-      message.error(err.message || '데이터셋 목록 조회에 실패했습니다.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const handleDelete = async (id) => {
-    try {
-      await deleteDataset(id);
-      message.success('데이터셋이 삭제되었습니다.');
-      loadData();
-    } catch (err) {
-      message.error(err.message || '삭제 중 오류가 발생했습니다.');
-    }
-  };
-
-  const columns = [
-    {
-      title: '데이터셋명',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text, record) => (
-        <a onClick={() => navigate(`/data/${record.id}`)} style={{ fontWeight: 600 }}>
-          <FileExcelOutlined style={{ marginRight: 8, color: '#1890ff' }} />
-          {text}
-        </a>
-      ),
-    },
-    {
-      title: '분류',
-      dataIndex: 'category',
-      key: 'category',
-      render: (cat) => <Tag color="blue">{cat || '기타'}</Tag>,
-    },
-    {
-      title: '행 수',
-      dataIndex: 'rowCount',
-      key: 'rowCount',
-      render: (val) => `${(val || 0).toLocaleString()} 행`,
-    },
-    {
-      title: '열 수',
-      dataIndex: 'columnCount',
-      key: 'columnCount',
-      render: (val) => `${val || 0} 개`,
-    },
-    {
-      title: '등록일시',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      render: (val) => (val ? new Date(val).toLocaleString() : '-'),
-    },
-    {
-      title: '소속 / 소유자',
-      key: 'owner',
-      render: (_, record) => `${record.orgId || '-'} / ${record.ownerId || '-'}`,
-    },
-    {
-      title: '작업',
-      key: 'action',
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="primary"
-            ghost
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => navigate(`/data/${record.id}`)}
-          >
-            상세 조회
-          </Button>
-          <Popconfirm
-            title="데이터셋 삭제"
-            description="이 데이터셋과 적재된 데이터를 삭제하시겠습니까?"
-            onConfirm={() => handleDelete(record.id)}
-            okText="삭제"
-            cancelText="취소"
-          >
-            <Button type="text" danger size="small" icon={<DeleteOutlined />}>
-              삭제
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
-
-  return (
-    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-      <Breadcrumb items={[{ title: '홈' }, { title: '데이터셋 목록' }]} />
-      <Card
-        title={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <Title level={4} style={{ margin: 0 }}>전체 데이터셋 목록</Title>
-              <Text type="secondary">적재된 데이터 플랫폼 메타데이터 및 시각화용 데이터셋입니다.</Text>
-            </div>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/upload')}>
-              신규 데이터 적재
-            </Button>
-          </div>
-        }
-      >
-        <Table
-          columns={columns}
-          dataSource={datasets}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-        />
-      </Card>
-    </Space>
-  );
-};
 
 // 2. /data/:id - Dataset Detail Grid View
 const DataDetailPage = () => {
@@ -574,13 +405,7 @@ const DataDetailPage = () => {
           </Form.Item>
           <Form.Item name="category" label="분류 카테고리">
             <Select
-              options={[
-                { value: '에너지/환경', label: '에너지/환경' },
-                { value: '설비관리', label: '설비관리' },
-                { value: '품질관리', label: '품질관리' },
-                { value: '생산실적', label: '생산실적' },
-                { value: '기타', label: '기타' },
-              ]}
+              options={CATEGORY_OPTIONS}
             />
           </Form.Item>
         </Form>
@@ -747,9 +572,9 @@ const DataUploadPage = () => {
       const metadataPayload = {
         name: values.name,
         description: values.description || '',
-        category: values.category || '기타',
-        ownerId: values.ownerId || 'user_admin',
-        orgId: values.orgId || 'org_hq',
+        category: values.category || DEFAULT_CATEGORY,
+        ownerId: values.ownerId || MOCK_OWNER_ID,
+        orgId: values.orgId || MOCK_ORG_ID,
         columns: columnsSchema.map((col) => ({ ...col, columnName: col.columnName.trim() })),
       };
 
@@ -845,12 +670,7 @@ const DataUploadPage = () => {
           value={text}
           style={{ width: '100%' }}
           onChange={(val) => handleDataTypeChange(record.columnKey, val)}
-          options={[
-            { value: 'STRING', label: '문자형 (STRING)' },
-            { value: 'NUMBER', label: '숫자형 (NUMBER)' },
-            { value: 'DATE', label: '날짜형 (DATE)' },
-            { value: 'BOOLEAN', label: '불리언 (BOOLEAN)' },
-          ]}
+          options={DATA_TYPE_OPTIONS}
         />
       ),
     },
@@ -896,11 +716,11 @@ const DataUploadPage = () => {
               form={manualForm}
               layout="vertical"
               initialValues={{
-                category: '기타',
-                ownerId: 'user_admin',
-                orgId: 'org_hq',
+                category: DEFAULT_CATEGORY,
+                ownerId: MOCK_OWNER_ID,
+                orgId: MOCK_ORG_ID,
                 columns: [
-                  { columnName: '', dataType: 'STRING' },
+                  { columnName: '', dataType: DEFAULT_DATA_TYPE },
                 ],
               }}
             >
@@ -920,13 +740,7 @@ const DataUploadPage = () => {
                 <Space size="large" style={{ display: 'flex' }}>
                   <Form.Item name="category" label="분류 카테고리" style={{ width: 240 }}>
                     <Select
-                      options={[
-                        { value: '에너지/환경', label: '에너지/환경' },
-                        { value: '설비관리', label: '설비관리' },
-                        { value: '품질관리', label: '품질관리' },
-                        { value: '생산실적', label: '생산실적' },
-                        { value: '기타', label: '기타' },
-                      ]}
+                      options={CATEGORY_OPTIONS}
                     />
                   </Form.Item>
 
@@ -969,12 +783,7 @@ const DataUploadPage = () => {
                             style={{ width: 180, marginBottom: 0 }}
                           >
                             <Select
-                              options={[
-                                { value: 'STRING', label: '문자형 (STRING)' },
-                                { value: 'NUMBER', label: '숫자형 (NUMBER)' },
-                                { value: 'DATE', label: '날짜형 (DATE)' },
-                                { value: 'BOOLEAN', label: '불리언 (BOOLEAN)' },
-                              ]}
+                              options={DATA_TYPE_OPTIONS}
                             />
                           </Form.Item>
                           <Button
@@ -993,7 +802,7 @@ const DataUploadPage = () => {
                       ))}
                       <Button
                         type="dashed"
-                        onClick={() => add({ columnName: '', dataType: 'STRING' })}
+                        onClick={() => add({ columnName: '', dataType: DEFAULT_DATA_TYPE })}
                         block
                         icon={<PlusOutlined />}
                       >
@@ -1031,7 +840,7 @@ const DataUploadPage = () => {
             <Form
               form={form}
               layout="vertical"
-              initialValues={{ category: '에너지/환경', ownerId: 'user_admin', orgId: 'org_hq' }}
+              initialValues={{ category: CATEGORY_OPTIONS[0].value, ownerId: MOCK_OWNER_ID, orgId: MOCK_ORG_ID }}
             >
               <Form.Item
                 name="name"
@@ -1048,12 +857,7 @@ const DataUploadPage = () => {
               <Space size="large" style={{ display: 'flex' }}>
                 <Form.Item name="category" label="분류 카테고리" style={{ width: 240 }}>
                   <Select
-                    options={[
-                      { value: '에너지/환경', label: '에너지/환경' },
-                      { value: '설비관리', label: '설비관리' },
-                      { value: '품질관리', label: '품질관리' },
-                      { value: '생산실적', label: '생산실적' },
-                    ]}
+                    options={CATEGORY_OPTIONS}
                   />
                 </Form.Item>
 
@@ -1144,7 +948,7 @@ const DataUploadPage = () => {
               <Form
                 form={form}
                 layout="vertical"
-                initialValues={{ category: '에너지/환경', ownerId: 'user_admin', orgId: 'org_hq' }}
+                initialValues={{ category: CATEGORY_OPTIONS[0].value, ownerId: MOCK_OWNER_ID, orgId: MOCK_ORG_ID }}
               >
                 <Form.Item
                   name="name"
@@ -1161,12 +965,7 @@ const DataUploadPage = () => {
                 <Space size="large" style={{ display: 'flex' }}>
                   <Form.Item name="category" label="분류 카테고리" style={{ width: 240 }}>
                     <Select
-                      options={[
-                        { value: '에너지/환경', label: '에너지/환경' },
-                        { value: '설비관리', label: '설비관리' },
-                        { value: '품질관리', label: '품질관리' },
-                        { value: '생산실적', label: '생산실적' },
-                      ]}
+                      options={CATEGORY_OPTIONS}
                     />
                   </Form.Item>
 
@@ -1258,8 +1057,8 @@ export default function App() {
     <BrowserRouter>
       <MainLayout>
         <Routes>
-          <Route path="/" element={<DataListPage />} />
-          <Route path="/data" element={<DataListPage />} />
+          <Route path="/" element={<DatasetListPage />} />
+          <Route path="/data" element={<DatasetListPage />} />
           <Route path="/data/:id" element={<DataDetailPage />} />
           <Route path="/upload" element={<DataUploadPage />} />
         </Routes>
