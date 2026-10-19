@@ -28,7 +28,7 @@
 - [x] **14. 에러 처리 통일** — 모든 예외가 400, not-found는 500. → `@RestControllerAdvice`.
 - [x] **15. 행 CRUD 스키마 검증 없음** — 스키마 밖 키 저장, 타입 미검증. → 컬럼 키 화이트리스트 + 타입 변환/검증.
 - [x] **16. UploadTaskService 메모리 누수** — 완료 작업이 맵에서 제거되지 않음. → 종료 10분 뒤 스케줄러가 제거.
-- [ ] **17. App.jsx 1237줄 단일 파일** — 페이지/모달/상수 분리. 카테고리·타입 옵션 중복, 엑셀 탭 '기타' 누락. → 진행: 5-B 완료(상수 `constants/` 통합과 '기타' 누락 해결, `MainLayout`·`DatasetListPage` 분리). 남은 것: 상세 페이지(5-C), 업로드 페이지(5-D).
+- [ ] **17. App.jsx 1237줄 단일 파일** — 페이지/모달/상수 분리. 카테고리·타입 옵션 중복, 엑셀 탭 '기타' 누락. → 진행: 5-B 완료(상수 `constants/` 통합과 '기타' 누락 해결, `MainLayout`·`DatasetListPage` 분리), 5-C 완료(`DatasetDetailPage` 분리, 메타 수정·행 추가/수정 모달·컬럼 표시 설정 컴포넌트화). 남은 것: 업로드 페이지(5-D).
 - [x] **18. API URL 하드코딩** — Vite `server.proxy` + 상대경로 `/api`.
 - [x] **19. antd v6 deprecated API** — `Space direction`, `Alert message`, `Spin tip` 등. → `Divider type`도 함께 교체.
 - [x] **20. 미사용 코드** — `/api/upload` 동기 업로드, `uploadDatasetFile`, `UploadRequest` DTO. → 프론트 미사용 `React` import, Vite 템플릿 잔여 파일(`src/assets/*`, `public/icons.svg`)도 제거.
