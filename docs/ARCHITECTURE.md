@@ -30,16 +30,21 @@ dgjs_2.0/
 └─ frontend/                  React 19 / Vite / antd 6 / react-router 7
     └─ src/
         ├─ main.jsx               엔트리
-        ├─ App.jsx                라우터 + 아직 분리 전인 업로드 페이지 (분리 진행 중, ROADMAP 17번)
-        │   └─ DataUploadPage     /upload       ① 엑셀/CSV 3단계 적재  ② 수동 스키마 설계
+        ├─ App.jsx                라우터 (경로와 페이지 연결만 담당)
         ├─ components/
         │   ├─ MainLayout.jsx           공통 레이아웃 (헤더, 메뉴)
         │   ├─ ColumnSettingsContent.jsx  컬럼 표시 설정 팝오버 내용
         │   ├─ MetaEditModal.jsx        데이터셋 메타 수정 모달
-        │   └─ RowFormModal.jsx         행 추가·수정 공용 모달
+        │   ├─ RowFormModal.jsx         행 추가·수정 공용 모달
+        │   ├─ DatasetMetaFields.jsx    데이터셋 이름·설명·카테고리·조직·등록자 입력 필드 (업로드 화면 공용)
+        │   ├─ UploadFileStep.jsx       적재 1단계: 메타 입력 + 파일 첨부
+        │   ├─ SchemaReviewStep.jsx     적재 2단계: 검증 안내, 컬럼명·타입 수정, 샘플 미리보기
+        │   ├─ UploadProgressStep.jsx   적재 3단계: 진행률 표시
+        │   └─ ManualSchemaForm.jsx     수동 스키마 설계 폼
         ├─ pages/
         │   ├─ DatasetListPage.jsx      /, /data      데이터셋 목록·삭제
-        │   └─ DatasetDetailPage.jsx    /data/:id     메타 정보, 서버 페이징 그리드, 컬럼 표시 토글, 메타 수정, 행 CRUD
+        │   ├─ DatasetDetailPage.jsx    /data/:id     메타 정보, 서버 페이징 그리드, 컬럼 표시 토글, 메타 수정, 행 CRUD
+        │   └─ UploadPage.jsx           /upload       ① 엑셀/CSV 3단계 적재(상태·폴링은 이 페이지가 보유)  ② 수동 스키마 설계
         ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), 임시 사용자·조직(mockUser.js)
         └─ api/datasetApi.js      백엔드 호출 fetch 래퍼 (상대경로 /api, 개발 서버는 vite.config.js의 server.proxy가 localhost:8080으로 전달)
 ```

@@ -13,7 +13,7 @@
 - 반복되는 스타일 객체는 컴포넌트 파일 상단 상수로 뽑는다 (CSS 파일 대신).
 
 ## 파일 / 컴포넌트 구조
-- `src/` 구성 (신규 코드 기준, 기존 `App.jsx` 분리는 추후 별도 작업)
+- `src/` 구성
   - `pages/` — 라우트 단위 페이지 (`DatasetListPage`, `DatasetDetailPage`, `UploadPage`)
   - `components/` — 재사용 컴포넌트·모달
   - `api/` — 백엔드 호출 함수
