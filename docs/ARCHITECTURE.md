@@ -30,10 +30,14 @@ dgjs_2.0/
 └─ frontend/                  React 19 / Vite / antd 6 / react-router 7
     └─ src/
         ├─ main.jsx               엔트리
-        ├─ App.jsx                레이아웃 + 페이지 3개
-        │   ├─ DataListPage       /, /data      데이터셋 목록·삭제
+        ├─ App.jsx                라우터 + 아직 분리 전인 페이지 2개 (분리 진행 중, ROADMAP 17번)
         │   ├─ DataDetailPage     /data/:id     메타 정보, 서버 페이징 그리드, 컬럼 표시 토글, 메타 수정, 행 CRUD
         │   └─ DataUploadPage     /upload       ① 엑셀/CSV 3단계 적재  ② 수동 스키마 설계
+        ├─ components/
+        │   └─ MainLayout.jsx     공통 레이아웃 (헤더, 메뉴)
+        ├─ pages/
+        │   └─ DatasetListPage.jsx  /, /data    데이터셋 목록·삭제
+        ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), 임시 사용자·조직(mockUser.js)
         └─ api/datasetApi.js      백엔드 호출 fetch 래퍼 (상대경로 /api, 개발 서버는 vite.config.js의 server.proxy가 localhost:8080으로 전달)
 ```
 
