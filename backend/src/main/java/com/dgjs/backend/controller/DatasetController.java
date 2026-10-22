@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dgjs.backend.dto.DatasetDto;
 import com.dgjs.backend.dto.SchemaPreviewDto;
 import com.dgjs.backend.service.DatasetService;
+import com.dgjs.backend.service.UploadFileStorage;
 import com.dgjs.backend.service.UploadTaskService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,6 +25,7 @@ public class DatasetController {
 
     private final DatasetService datasetService;
     private final UploadTaskService uploadTaskService;
+    private final UploadFileStorage uploadFileStorage;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @GetMapping("/datasets")
@@ -56,13 +59,18 @@ public class DatasetController {
         datasetService.validateUploadRequest(request);
         String taskId = UUID.randomUUID().toString();
 
-        // HTTP 요청 스레드가 종료되면서 Tomcat 임시 임시파일(upload_xxx.tmp)이 삭제되는 현상을 방지하기 위해 바이트 배열을 추출
-        byte[] fileBytes = file.getBytes();
+        // HTTP 요청 스레드가 종료되면 Tomcat 임시 파일이 삭제되므로, 비동기 처리용 임시 파일로 옮겨 경로만 넘김 (처리 후 비동기 쪽에서 삭제)
+        Path uploadedFile = uploadFileStorage.save(file);
         String originalFilename = file.getOriginalFilename();
 
-        // 비동기 스레드 시작 전에 첫 진행률 조회가 도착해도 작업이 존재해야 하므로 호출 전 등록임
-        uploadTaskService.initTask(taskId);
-        datasetService.processAsyncUpload(taskId, fileBytes, originalFilename, request);
+        try {
+            // 비동기 스레드 시작 전에 첫 진행률 조회가 도착해도 작업이 존재해야 하므로 호출 전 등록임
+            uploadTaskService.initTask(taskId);
+            datasetService.processAsyncUpload(taskId, uploadedFile, originalFilename, request);
+        } catch (RuntimeException e) {
+            uploadFileStorage.delete(uploadedFile);
+            throw e;
+        }
 
         return ResponseEntity.ok(Map.of("success", true, "taskId", taskId, "message", "비동기 업로드가 시작되었습니다."));
     }

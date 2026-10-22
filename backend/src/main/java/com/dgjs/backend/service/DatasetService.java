@@ -18,7 +18,6 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.poi.EncryptedDocumentException;
-import org.apache.poi.ss.usermodel.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -30,9 +29,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
 import java.nio.charset.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -46,9 +45,13 @@ public class DatasetService {
     private final DatasetRowRepository rowRepository;
     private final UploadTaskService uploadTaskService;
     private final RowDataValidator rowDataValidator;
+    private final UploadFileStorage uploadFileStorage;
     private final TransactionTemplate transactionTemplate;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private static final int PREVIEW_ROW_LIMIT = 10;
+    private static final String CSV_FORMAT_ERROR = "CSV 형식이 올바르지 않습니다. 따옴표 짝이 맞는지 확인해 주세요.";
 
     @Transactional(readOnly = true)
     public List<DatasetDto.SummaryResponse> getAllDatasets() {
@@ -135,104 +138,111 @@ public class DatasetService {
             return previewAndValidateCsv(file);
         }
 
+        Path tempFile = uploadFileStorage.save(file);
+        try {
+            return previewSpreadsheet(tempFile);
+        } finally {
+            uploadFileStorage.delete(tempFile);
+        }
+    }
+
+    private SchemaPreviewDto.Response previewSpreadsheet(Path path) {
         List<String> warnings = new ArrayList<>();
-        boolean valid = true;
+        List<SchemaPreviewDto.ColumnInfo> columnInfos = new ArrayList<>();
+        List<Map<String, Object>> previewRows = new ArrayList<>();
+        boolean[] headerRead = {false};
+        String[] headerError = {null};
 
-        try (InputStream is = file.getInputStream(); Workbook workbook = WorkbookFactory.create(is)) {
-            if (workbook.getNumberOfSheets() == 0) {
-                return SchemaPreviewDto.Response.builder()
-                        .valid(false)
-                        .warnings(List.of("엑셀 워크시트(Sheet)가 존재하지 않습니다."))
-                        .build();
-            }
-
-            Sheet sheet = workbook.getSheetAt(0);
-            Iterator<Row> rowIterator = sheet.iterator();
-
-            if (!rowIterator.hasNext()) {
-                return SchemaPreviewDto.Response.builder()
-                        .valid(false)
-                        .warnings(List.of("파일에 행 데이터가 존재하지 않는 빈 파일입니다."))
-                        .build();
-            }
-
-            Row headerRow = rowIterator.next();
-            if (headerRow == null || headerRow.getLastCellNum() <= 0) {
-                return SchemaPreviewDto.Response.builder()
-                        .valid(false)
-                        .warnings(List.of("첫 번째 행에서 컬럼 헤더(Header) 정보를 찾을 수 없습니다."))
-                        .build();
-            }
-
-            List<SchemaPreviewDto.ColumnInfo> columnInfos = new ArrayList<>();
-
-            for (int i = 0; i < headerRow.getLastCellNum(); i++) {
-                Cell cell = headerRow.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                String columnName = cell != null ? cell.toString().trim() : "";
-
-                if (columnName.isEmpty()) {
-                    columnName = "Column_" + (i + 1);
-                    warnings.add("일부 컬럼 헤더가 비어있어 '" + columnName + "'으로 임시 지정되었습니다.");
+        boolean hasSheet;
+        try {
+            hasSheet = SpreadsheetReader.read(path, (rowNumber, cells) -> {
+                if (!headerRead[0]) {
+                    headerRead[0] = true;
+                    if (cells.isEmpty()) {
+                        headerError[0] = "첫 번째 행에서 컬럼 헤더(Header) 정보를 찾을 수 없습니다.";
+                        return false;
+                    }
+                    for (int i = 0; i < cells.size(); i++) {
+                        String columnName = headerName(cells.get(i));
+                        if (columnName.isEmpty()) {
+                            columnName = "Column_" + (i + 1);
+                            warnings.add("일부 컬럼 헤더가 비어있어 '" + columnName + "'으로 임시 지정되었습니다.");
+                        }
+                        columnInfos.add(SchemaPreviewDto.ColumnInfo.builder()
+                                .columnKey("col_" + i)
+                                .columnName(columnName)
+                                .dataType("STRING") // 기본 STRING, 하단 검증에서 타입 추정
+                                .sortOrder(i)
+                                .build());
+                    }
+                    return true;
                 }
 
-                columnInfos.add(SchemaPreviewDto.ColumnInfo.builder()
-                        .columnKey("col_" + i)
-                        .columnName(columnName)
-                        .dataType("STRING") // 기본 STRING, 하단 검증에서 타입 추정
-                        .sortOrder(i)
-                        .build());
-            }
-
-            // 샘플 10행 파싱 및 타입 자동 추정
-            List<Map<String, Object>> previewRows = new ArrayList<>();
-            int sampleCount = 0;
-
-            while (rowIterator.hasNext() && sampleCount < 10) {
-                Row row = rowIterator.next();
+                // 샘플 10행 파싱 (빈 행은 건너뜀)
                 Map<String, Object> rowMap = new LinkedHashMap<>();
                 boolean isEmptyRow = true;
-
                 for (int i = 0; i < columnInfos.size(); i++) {
-                    Cell cell = row.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                    Object cellValue = getCellValue(cell);
+                    Object cellValue = i < cells.size() ? cells.get(i) : null;
                     if (cellValue != null && !cellValue.toString().trim().isEmpty()) {
                         isEmptyRow = false;
                     }
                     rowMap.put(columnInfos.get(i).getColumnKey(), cellValue != null ? cellValue : "");
                 }
-
                 if (!isEmptyRow) {
-                    rowMap.put("key", "preview_" + sampleCount);
+                    rowMap.put("key", "preview_" + previewRows.size());
                     previewRows.add(rowMap);
-                    sampleCount++;
                 }
-            }
-
-            if (previewRows.isEmpty()) {
-                valid = false;
-                warnings.add("헤더 이후 적재할 유효한 샘플 데이터 행이 존재하지 않습니다.");
-            } else {
-                // 타입 추정 (숫자/날짜 여부)
-                for (SchemaPreviewDto.ColumnInfo col : columnInfos) {
-                    String inferredType = inferColumnDataType(col.getColumnKey(), previewRows);
-                    col.setDataType(inferredType);
-                }
-            }
-
-            return SchemaPreviewDto.Response.builder()
-                    .valid(valid)
-                    .warnings(warnings)
-                    .columns(columnInfos)
-                    .previewRows(previewRows)
-                    .totalPreviewRows(previewRows.size())
-                    .build();
+                return previewRows.size() < PREVIEW_ROW_LIMIT;
+            });
         } catch (IOException | EncryptedDocumentException e) {
-            throw new IllegalArgumentException("엑셀 파일을 읽을 수 없습니다. 파일 형식과 암호 설정을 확인해 주세요.");
+            throw new IllegalArgumentException(SpreadsheetReader.UNREADABLE_MESSAGE, e);
         }
+
+        if (!hasSheet) {
+            return invalidPreview("엑셀 워크시트(Sheet)가 존재하지 않습니다.");
+        }
+        if (!headerRead[0]) {
+            return invalidPreview("파일에 행 데이터가 존재하지 않는 빈 파일입니다.");
+        }
+        if (headerError[0] != null) {
+            return invalidPreview(headerError[0]);
+        }
+
+        boolean valid = true;
+        if (previewRows.isEmpty()) {
+            valid = false;
+            warnings.add("헤더 이후 적재할 유효한 샘플 데이터 행이 존재하지 않습니다.");
+        } else {
+            // 타입 추정 (숫자/날짜 여부)
+            for (SchemaPreviewDto.ColumnInfo col : columnInfos) {
+                col.setDataType(inferColumnDataType(col.getColumnKey(), previewRows));
+            }
+        }
+
+        return SchemaPreviewDto.Response.builder()
+                .valid(valid)
+                .warnings(warnings)
+                .columns(columnInfos)
+                .previewRows(previewRows)
+                .totalPreviewRows(previewRows.size())
+                .build();
+    }
+
+    private SchemaPreviewDto.Response invalidPreview(String warning) {
+        return SchemaPreviewDto.Response.builder()
+                .valid(false)
+                .warnings(List.of(warning))
+                .build();
+    }
+
+    private String headerName(Object value) {
+        if (value == null) return "";
+        if (value instanceof Boolean b) return b ? "TRUE" : "FALSE";
+        return value.toString().trim();
     }
 
     @Async
-    public void processAsyncUpload(String taskId, byte[] fileBytes, String originalFilename, SchemaPreviewDto.FinalUploadRequest request) {
+    public void processAsyncUpload(String taskId, Path uploadedFile, String originalFilename, SchemaPreviewDto.FinalUploadRequest request) {
         Long datasetId = null;
         try {
             uploadTaskService.updateProgress(taskId, 10, "데이터 메타정보 생성 중...");
@@ -270,7 +280,7 @@ public class DatasetService {
 
             if (isCsvFile(originalFilename)) {
                 uploadTaskService.updateProgress(taskId, 40, "CSV 대용량 행 데이터 읽는 중...");
-                try (CSVParser parser = openCsvParser(fileBytes)) {
+                try (CSVParser parser = openCsvParser(() -> Files.newInputStream(uploadedFile))) {
                     Iterator<CSVRecord> records = parser.iterator();
                     if (records.hasNext()) {
                         records.next(); // 헤더 건너뛰기
@@ -315,71 +325,86 @@ public class DatasetService {
                     }
 
                     finishUpload(taskId, datasetId);
+                } catch (UncheckedIOException e) {
+                    throw new IllegalArgumentException(CSV_FORMAT_ERROR, e);
                 }
             } else {
                 uploadTaskService.updateProgress(taskId, 40, "엑셀 대용량 행 데이터 읽는 중...");
-                try (InputStream is = new java.io.ByteArrayInputStream(fileBytes); Workbook workbook = WorkbookFactory.create(is)) {
-                    Sheet sheet = workbook.getSheetAt(0);
-                    int totalRows = sheet.getLastRowNum();
-                    Iterator<Row> rowIterator = sheet.iterator();
-
-                    if (rowIterator.hasNext()) {
-                        rowIterator.next(); // skip header
-                    }
-
-                    final int CHUNK_SIZE = 500;
-                    List<DatasetRow> chunkList = new ArrayList<>();
-                    int rowIndex = 0;
-                    int processedCount = 0;
-
-                    while (rowIterator.hasNext()) {
-                        Row row = rowIterator.next();
-                        Map<String, Object> rowMap = new LinkedHashMap<>();
-                        boolean isEmptyRow = true;
-
-                        for (int i = 0; i < request.getColumns().size(); i++) {
-                            SchemaPreviewDto.ColumnInfo col = request.getColumns().get(i);
-                            Cell cell = row.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
-                            Object cellValue = getCellValue(cell);
-                            if (cellValue != null && !cellValue.toString().trim().isEmpty()) {
-                                isEmptyRow = false;
-                            }
-                            rowMap.put(col.getColumnKey(), cellValue != null ? cellValue : "");
-                        }
-
-                        if (!isEmptyRow) {
-                            chunkList.add(DatasetRow.builder()
-                                    .datasetId(datasetId)
-                                    .rowIndex(rowIndex++)
-                                    .dataJson(objectMapper.writeValueAsString(rowMap))
-                                    .build());
-
-                            if (chunkList.size() >= CHUNK_SIZE) {
-                                insertRows(chunkList);
-                                chunkList.clear();
-                            }
-                        }
-
-                        processedCount++;
-                        if (totalRows > 0 && processedCount % 50 == 0) {
-                            int currentPercent = 40 + (int) (((double) processedCount / totalRows) * 55);
-                            uploadTaskService.updateProgress(taskId, Math.min(95, currentPercent), "데이터 적재 진행 중 (" + processedCount + " 행)");
-                        }
-                    }
-
-                    if (!chunkList.isEmpty()) {
-                        insertRows(chunkList);
-                        chunkList.clear();
-                    }
-
-                    finishUpload(taskId, datasetId);
-                }
+                loadSpreadsheetRows(taskId, datasetId, uploadedFile, request);
+                finishUpload(taskId, datasetId);
             }
         } catch (Exception e) {
             log.error("비동기 적재 실패 (taskId={})", taskId, e);
             cleanupFailedUpload(datasetId);
             uploadTaskService.failTask(taskId, e instanceof IllegalArgumentException ? e.getMessage() : "서버 내부 오류가 발생했습니다.");
+        } finally {
+            uploadFileStorage.delete(uploadedFile);
         }
+    }
+
+    private void loadSpreadsheetRows(String taskId, Long datasetId, Path file, SchemaPreviewDto.FinalUploadRequest request) throws IOException {
+        final int CHUNK_SIZE = 500;
+        List<SchemaPreviewDto.ColumnInfo> columns = request.getColumns();
+        List<DatasetRow> chunkList = new ArrayList<>();
+        int[] counters = {0, 0, 0}; // 저장한 행 번호, 처리한 행 수, 시트에 선언된 마지막 행 번호
+        boolean[] headerSkipped = {false};
+
+        SpreadsheetReader.read(file, new SpreadsheetReader.RowVisitor() {
+            @Override
+            public void totalRows(int total) {
+                counters[2] = total;
+            }
+
+            @Override
+            public boolean visit(int rowNumber, List<Object> cells) throws IOException {
+                if (!headerSkipped[0]) {
+                    headerSkipped[0] = true;
+                    return true;
+                }
+
+                Map<String, Object> rowMap = new LinkedHashMap<>();
+                boolean isEmptyRow = true;
+                for (int i = 0; i < columns.size(); i++) {
+                    Object cellValue = i < cells.size() ? cells.get(i) : null;
+                    if (cellValue != null && !cellValue.toString().trim().isEmpty()) {
+                        isEmptyRow = false;
+                    }
+                    rowMap.put(columns.get(i).getColumnKey(), cellValue != null ? cellValue : "");
+                }
+
+                if (!isEmptyRow) {
+                    chunkList.add(DatasetRow.builder()
+                            .datasetId(datasetId)
+                            .rowIndex(counters[0]++)
+                            .dataJson(objectMapper.writeValueAsString(rowMap))
+                            .build());
+                    if (chunkList.size() >= CHUNK_SIZE) {
+                        insertRows(chunkList);
+                        chunkList.clear();
+                    }
+                }
+
+                counters[1]++;
+                if (counters[1] % 50 == 0) {
+                    uploadTaskService.updateProgress(taskId, progressPercent(counters[1], counters[2]),
+                            "데이터 적재 진행 중 (" + counters[1] + " 행)");
+                }
+                return true;
+            }
+        });
+
+        if (!chunkList.isEmpty()) {
+            insertRows(chunkList);
+            chunkList.clear();
+        }
+    }
+
+    // 40~95% 구간. 총 행 수를 알 수 없으면 처리 행 수가 늘수록 95에 천천히 가까워지게 함
+    static int progressPercent(int processed, int totalRows) {
+        if (totalRows > 0) {
+            return Math.min(95, 40 + (int) (((double) processed / totalRows) * 55));
+        }
+        return 40 + (int) (55.0 * processed / (processed + 50_000.0));
     }
 
     // IDENTITY 키 전략에서는 saveAll도 건별 insert가 되므로 JDBC 배치를 직접 사용
@@ -450,29 +475,6 @@ public class DatasetService {
         return "STRING";
     }
 
-    private Object getCellValue(Cell cell) {
-        if (cell == null) return null;
-        CellType type = cell.getCellType() == CellType.FORMULA ? cell.getCachedFormulaResultType() : cell.getCellType();
-        return switch (type) {
-            case STRING -> cell.getStringCellValue();
-            case NUMERIC -> numericCellValue(cell);
-            case BOOLEAN -> cell.getBooleanCellValue();
-            default -> null;
-        };
-    }
-
-    private Object numericCellValue(Cell cell) {
-        if (DateUtil.isCellDateFormatted(cell)) {
-            java.time.LocalDateTime dt = cell.getLocalDateTimeCellValue();
-            return dt.toLocalTime().equals(java.time.LocalTime.MIDNIGHT) ? dt.toLocalDate().toString() : dt.toString();
-        }
-        double d = cell.getNumericCellValue();
-        if (d == Math.rint(d) && Math.abs(d) < 1e15) {
-            return (long) d;
-        }
-        return d;
-    }
-
     @Transactional
     public Long createManualDataset(DatasetDto.ManualCreateRequest request) {
         if (request.getName() == null || request.getName().trim().isEmpty()) {
@@ -521,25 +523,30 @@ public class DatasetService {
         return filename != null && filename.toLowerCase().endsWith(".csv");
     }
 
-    // UTF-8로 엄격 해석이 가능하면 UTF-8, 아니면 엑셀 저장 CSV에 흔한 MS949로 판단
-    private Charset detectCsvCharset(byte[] bytes) {
+    @FunctionalInterface
+    private interface StreamSource {
+        InputStream open() throws IOException;
+    }
+
+    // UTF-8로 엄격 해석이 가능하면 UTF-8, 아니면 엑셀 저장 CSV에 흔한 MS949로 판단 (파일 전체를 스트림으로 한 번 훑음)
+    private Charset detectCsvCharset(StreamSource source) throws IOException {
         CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT);
-        ByteBuffer in = ByteBuffer.wrap(bytes);
-        CharBuffer out = CharBuffer.allocate(8192);
-        CoderResult result;
-        while (!(result = decoder.decode(in, out, true)).isUnderflow()) {
-            if (result.isError()) {
-                return Charset.forName("MS949");
+        try (Reader reader = new InputStreamReader(source.open(), decoder)) {
+            char[] buffer = new char[8192];
+            while (reader.read(buffer) != -1) {
+                // 디코딩 오류 여부만 확인함
             }
-            out.clear();
+            return StandardCharsets.UTF_8;
+        } catch (CharacterCodingException e) {
+            return Charset.forName("MS949");
         }
-        return StandardCharsets.UTF_8;
     }
 
-    private CSVParser openCsvParser(byte[] bytes) throws IOException {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(bytes), detectCsvCharset(bytes)));
+    private CSVParser openCsvParser(StreamSource source) throws IOException {
+        Charset charset = detectCsvCharset(source);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(source.open(), charset));
         reader.mark(1);
         if (reader.read() != '﻿') {
             reader.reset();
@@ -555,7 +562,7 @@ public class DatasetService {
         List<String> warnings = new ArrayList<>();
         boolean valid = true;
 
-        try (CSVParser parser = openCsvParser(file.getBytes())) {
+        try (CSVParser parser = openCsvParser(file::getInputStream)) {
             Iterator<CSVRecord> records = parser.iterator();
             if (!records.hasNext()) {
                 return SchemaPreviewDto.Response.builder()
@@ -624,7 +631,7 @@ public class DatasetService {
                     .totalPreviewRows(previewRows.size())
                     .build();
         } catch (UncheckedIOException e) {
-            throw new IllegalArgumentException("CSV 형식이 올바르지 않습니다. 따옴표 짝이 맞는지 확인해 주세요.");
+            throw new IllegalArgumentException(CSV_FORMAT_ERROR, e);
         }
     }
 

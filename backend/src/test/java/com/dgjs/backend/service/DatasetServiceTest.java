@@ -31,6 +31,7 @@ class DatasetServiceTest {
             Mockito.mock(DatasetRowRepository.class),
             Mockito.mock(UploadTaskService.class),
             new RowDataValidator(),
+            new UploadFileStorage(),
             Mockito.mock(TransactionTemplate.class),
             Mockito.mock(JdbcTemplate.class));
 
@@ -320,5 +321,56 @@ class DatasetServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.validateUploadRequest(request(col("col_0", "이름"), col("col_0", "나이"))))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 엑셀_숫자_헤더는_소수점_없이_컬럼명으로_쓴다() throws IOException {
+        byte[] bytes = workbook((wb, sheet) -> {
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue(2026);
+            header.createCell(1).setCellValue(12.5);
+            header.createCell(2).setCellValue(true);
+            Row row = sheet.createRow(1);
+            row.createCell(0).setCellValue("a");
+        });
+
+        SchemaPreviewDto.Response response = previewXlsx(bytes);
+
+        assertThat(columnNames(response)).containsExactly("2026", "12.5", "TRUE");
+    }
+
+    @Test
+    void 엑셀_미리보기는_큰_파일도_샘플_10행만_읽고_임시_파일을_남기지_않는다() throws IOException {
+        byte[] bytes = workbook((wb, sheet) -> {
+            Row header = sheet.createRow(0);
+            header.createCell(0).setCellValue("번호");
+            for (int i = 1; i <= 30_000; i++) {
+                sheet.createRow(i).createCell(0).setCellValue(i);
+            }
+        });
+        long before = countUploadTempFiles();
+
+        SchemaPreviewDto.Response response = previewXlsx(bytes);
+
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.getPreviewRows()).hasSize(10);
+        assertThat(response.getPreviewRows().get(9)).containsEntry("col_0", 10L);
+        assertThat(countUploadTempFiles()).isEqualTo(before);
+    }
+
+    @Test
+    void 엑셀_파일_형식이_아닌_zip은_400용_예외를_던지고_임시_파일을_남기지_않는다() throws IOException {
+        long before = countUploadTempFiles();
+
+        assertThatThrownBy(() -> previewXlsx(new byte[]{'P', 'K', 3, 4, 0, 0, 0, 0}))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("엑셀 파일을 읽을 수 없습니다");
+        assertThat(countUploadTempFiles()).isEqualTo(before);
+    }
+
+    private long countUploadTempFiles() throws IOException {
+        try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(java.nio.file.Path.of(System.getProperty("java.io.tmpdir")))) {
+            return files.filter(p -> p.getFileName().toString().startsWith("dgjs-upload-")).count();
+        }
     }
 }
