@@ -22,7 +22,7 @@
 - [x] **9. 삭제가 건별 DELETE** — 파생 `deleteByDatasetId` → `@Modifying @Query` 벌크 삭제.
 - [x] **10. 목록 N+1** — 데이터셋마다 count + 컬럼 전체 조회 → 그룹 count 쿼리로 대체.
 - [x] **11. 배치 insert 미동작 + SQL 로그 폭주** — IDENTITY라 saveAll도 1건씩, show-sql/format_sql on. → 로그 off, `JdbcTemplate.batchUpdate` + `rewriteBatchedStatements=true`.
-- [ ] **12. (후속) 대용량 xlsx 메모리** — `getBytes()` + DOM 방식 파싱. 스트리밍 파서 검토.
+- [x] **12. (후속) 대용량 xlsx 메모리** — `getBytes()` + DOM 방식 파싱. 스트리밍 파서 검토. → xlsx는 SAX 스트리밍(`XlsxRowReader`), 업로드 파일은 임시 파일로 저장해 `byte[]` 제거(CSV 포함), 미리보기는 샘플 10행에서 중단. 힙 512MB 기준 10만 행(5.8MB)에서 메모리 부족이던 것이 30만 행까지 힙 150MB 이내로 처리됨.
 
 ## 🟡 P3 — 구조 / 유지보수
 - [x] **14. 에러 처리 통일** — 모든 예외가 400, not-found는 500. → `@RestControllerAdvice`.
