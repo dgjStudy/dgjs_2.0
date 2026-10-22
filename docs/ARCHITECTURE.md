@@ -5,6 +5,7 @@
 ```
 dgjs_2.0/
 ├─ CLAUDE.md                  Claude Code 작업 규칙
+├─ dev.ps1                    개발 서버 일괄 실행·종료 스크립트 (백엔드 + 프론트, 사전 점검 포함)
 ├─ docs/                      프로젝트 문서
 ├─ backend/                   Spring Boot 3.3.4 / Java 17 / JPA / MySQL / Apache POI / springdoc
 │   └─ src/main/java/com/dgjs/backend/

@@ -11,6 +11,12 @@
 
 ## 실행 방법
 
+### 한 번에 실행 (Windows PowerShell, 프로젝트 루트)
+- `.\dev.ps1` — 백엔드와 프론트를 Windows Terminal 탭 두 개로 실행하고, 준비되면 알려준다.
+- 실행 전 점검: MySQL 서비스 상태, `JAVA_HOME`(없으면 `~\.jdks`의 JDK 17 사용), `frontend\node_modules`, 8080/5173 포트 사용 여부.
+- 옵션: `-Backend`, `-Frontend`(한쪽만), `-NoWt`(Windows Terminal 대신 PowerShell 창), `-Stop`(8080/5173의 java·node 프로세스 종료, `-Backend`·`-Frontend`와 함께 쓰면 한쪽만).
+- 아래 개별 실행 방법도 그대로 사용할 수 있다.
+
 ### Backend (`backend/`, Spring Boot 3.3.4 / Java 17 / MySQL)
 1. 로컬 MySQL에 `dgjs2_db` 스키마 생성 (테이블은 `ddl-auto: update`로 자동 생성)
 2. DB 접속 정보 설정 — 아래 중 하나
