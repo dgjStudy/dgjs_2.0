@@ -21,7 +21,7 @@ const UploadProgressStep = ({ statusMsg, progress, taskStatus, onBackToSchema })
       )}
       {taskStatus === 'FAILED' && (
         <div>
-          <Text type="danger">적재 실패 사유: {statusMsg}</Text>
+          <Text type="danger">파일 내용이나 컬럼 설정을 확인한 뒤 다시 시도해 주세요.</Text>
           <br />
           <Button style={{ marginTop: 16 }} onClick={onBackToSchema}>스키마 다시 확인</Button>
         </div>
