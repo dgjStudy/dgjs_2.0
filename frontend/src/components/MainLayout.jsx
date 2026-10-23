@@ -1,40 +1,63 @@
-import { Layout, Menu } from 'antd';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { DatabaseOutlined, UploadOutlined } from '@ant-design/icons';
+import { useState } from 'react';
+import { Button, Drawer, Layout, Space, Typography, theme } from 'antd';
+import { DatabaseOutlined, MenuOutlined } from '@ant-design/icons';
+import SideMenu from './SideMenu';
+import UserMenu from './UserMenu';
 
 const { Header, Content } = Layout;
+const { Text } = Typography;
+
+const BRAND_STYLE = { fontSize: 16, fontWeight: 600 };
+const CONTENT_STYLE = { padding: '24px 28px' };
+
+const Brand = () => {
+  const { token } = theme.useToken();
+  return (
+    <Space size={8}>
+      <DatabaseOutlined style={{ color: token.colorPrimary, fontSize: 20 }} />
+      <Text style={BRAND_STYLE}>DGJS 2.0</Text>
+    </Space>
+  );
+};
 
 const MainLayout = ({ children }) => {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const getSelectedKey = () => {
-    if (location.pathname.startsWith('/data')) return '/data';
-    if (location.pathname === '/upload') return '/upload';
-    return '/data';
-  };
+  const { token } = theme.useToken();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', background: '#001529', padding: '0 24px' }}>
-        <div style={{ color: '#fff', fontSize: '18px', fontWeight: 'bold', marginRight: '40px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <DatabaseOutlined style={{ color: '#1890ff', fontSize: '22px' }} />
-          <span>DGJS 2.0 Platform</span>
-        </div>
-        <Menu
-          theme="dark"
-          mode="horizontal"
-          selectedKeys={[getSelectedKey()]}
-          style={{ flex: 1, minWidth: 0 }}
-          items={[
-            { key: '/data', icon: <DatabaseOutlined />, label: '전체 데이터셋 목록', onClick: () => navigate('/data') },
-            { key: '/upload', icon: <UploadOutlined />, label: '데이터 적재 및 스키마 정의', onClick: () => navigate('/upload') },
-          ]}
-        />
+      <Header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: token.colorBgContainer,
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          padding: '0 20px',
+        }}
+      >
+        <Space size={12}>
+          <Button
+            type="text"
+            aria-label="메뉴 열기"
+            icon={<MenuOutlined />}
+            onClick={() => setMenuOpen(true)}
+          />
+          <Brand />
+        </Space>
+        <UserMenu />
       </Header>
-      <Content style={{ padding: '24px 48px', background: '#f0f2f5' }}>
-        {children}
-      </Content>
+      <Drawer
+        placement="left"
+        size={240}
+        title={<Brand />}
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        styles={{ body: { padding: 8 } }}
+      >
+        <SideMenu onNavigate={() => setMenuOpen(false)} />
+      </Drawer>
+      <Content style={CONTENT_STYLE}>{children}</Content>
     </Layout>
   );
 };

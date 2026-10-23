@@ -34,9 +34,12 @@ dgjs_2.0/
 └─ frontend/                  React 19 / Vite / antd 6 / react-router 7
     └─ src/
         ├─ main.jsx               엔트리
-        ├─ App.jsx                라우터 (경로와 페이지 연결만 담당)
+        ├─ App.jsx                ConfigProvider(테마) + 라우터 (경로와 페이지 연결만 담당, `/`는 `/data`로 이동)
+        ├─ theme/theme.js         antd 테마 토큰. getThemeConfig('light' | 'dark') (다크 전환 기능은 후속)
         ├─ components/
-        │   ├─ MainLayout.jsx           공통 레이아웃 (헤더, 메뉴)
+        │   ├─ MainLayout.jsx           공통 레이아웃 (상단 바 + 본문). 메뉴 버튼으로 사이드바를 오버레이(Drawer)로 연다
+        │   ├─ SideMenu.jsx             사이드바 메뉴 항목 (현재 "데이터셋" 하나)
+        │   ├─ UserMenu.jsx             상단 바 우측 사용자 영역 (현재 mock 사용자)
         │   ├─ ColumnSettingsContent.jsx  컬럼 표시 설정 팝오버 내용
         │   ├─ MetaEditModal.jsx        데이터셋 메타 수정 모달
         │   ├─ RowFormModal.jsx         행 추가·수정 공용 모달
@@ -49,7 +52,7 @@ dgjs_2.0/
         │   ├─ DatasetListPage.jsx      /, /data      데이터셋 목록·삭제
         │   ├─ DatasetDetailPage.jsx    /data/:id     메타 정보, 서버 페이징 그리드, 컬럼 표시 토글, 메타 수정, 행 CRUD
         │   └─ UploadPage.jsx           /upload       ① 엑셀/CSV 3단계 적재(상태·폴링은 이 페이지가 보유)  ② 수동 스키마 설계
-        ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), 임시 사용자·조직(mockUser.js)
+        ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), 임시 사용자·조직(mockUser.js: 소유자·조직 ID와 상단 바 표시용 MOCK_USER)
         └─ api/datasetApi.js      백엔드 호출 fetch 래퍼 (상대경로 /api, 개발 서버는 vite.config.js의 server.proxy가 localhost:8080으로 전달)
 ```
 
