@@ -5,7 +5,7 @@
 ```
 dgjs_2.0/
 ├─ CLAUDE.md                  Claude Code 작업 규칙
-├─ dev.ps1                    개발 서버 일괄 실행·종료 스크립트 (백엔드 + 프론트, 사전 점검 포함)
+├─ dev.ps1                    개발 서버 일괄 실행·종료 스크립트 (백엔드 + 프론트, 사전 점검 포함, 기본은 창 없이 백그라운드 실행 후 .dev-logs/에 로그 기록)
 ├─ docs/                      프로젝트 문서
 ├─ backend/                   Spring Boot 3.3.4 / Java 17 / JPA / MySQL / Apache POI / springdoc
 │   └─ src/main/java/com/dgjs/backend/
@@ -40,6 +40,7 @@ dgjs_2.0/
         │   ├─ MainLayout.jsx           공통 레이아웃 (상단 바 + 본문). 메뉴 버튼으로 사이드바를 오버레이(Drawer)로 연다
         │   ├─ SideMenu.jsx             사이드바 메뉴 항목 (현재 "데이터셋" 하나)
         │   ├─ UserMenu.jsx             상단 바 우측 사용자 영역 (현재 mock 사용자)
+        │   ├─ PageTitle.jsx            페이지 제목·설명·우측 액션 영역 (화면 공통)
         │   ├─ ColumnSettingsContent.jsx  컬럼 표시 설정 팝오버 내용
         │   ├─ MetaEditModal.jsx        데이터셋 메타 수정 모달
         │   ├─ RowFormModal.jsx         행 추가·수정 공용 모달
@@ -52,6 +53,7 @@ dgjs_2.0/
         │   ├─ DatasetListPage.jsx      /, /data      데이터셋 목록·삭제
         │   ├─ DatasetDetailPage.jsx    /data/:id     메타 정보, 서버 페이징 그리드, 컬럼 표시 토글, 메타 수정, 행 CRUD
         │   └─ UploadPage.jsx           /upload       ① 엑셀/CSV 3단계 적재(상태·폴링은 이 페이지가 보유)  ② 수동 스키마 설계
+        ├─ utils/formatDate.js    날짜 표시 형식(YYYY-MM-DD HH:mm)과 정렬용 타임스탬프 변환
         ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), 임시 사용자·조직(mockUser.js: 소유자·조직 ID와 상단 바 표시용 MOCK_USER)
         └─ api/datasetApi.js      백엔드 호출 fetch 래퍼 (상대경로 /api, 개발 서버는 vite.config.js의 server.proxy가 localhost:8080으로 전달)
 ```
@@ -62,7 +64,7 @@ dgjs_2.0/
 
 | 테이블 | 의미 | 주요 컬럼 |
 |---|---|---|
-| `dataset_meta` | 데이터셋 1건 (엑셀 시트 1장) | dataset_id, name, description, category, owner_id, org_id, status(PROCESSING/READY/FAILED, NULL=READY), created_at |
+| `dataset_meta` | 데이터셋 1건 (엑셀 시트 1장) | dataset_id, name, description, category, owner_id, org_id, status(PROCESSING/READY/FAILED, NULL=READY), created_at, last_loaded_at(적재 완료·행 추가 시각, NULL이면 응답에서 등록일로 대체) |
 | `dataset_column` | 열 정의 (헤더 1칸) | dataset_id, column_key(`col_0..N`), column_name, data_type(STRING/NUMBER/DATE/BOOLEAN), sort_order. 인덱스 `(dataset_id)` |
 | `dataset_row` | 행 1줄 | dataset_id, row_index, data_json(`{"col_0": ..., "col_1": ...}`). 인덱스 `(dataset_id, row_index)` |
 
@@ -72,8 +74,8 @@ dgjs_2.0/
 
 | Method | Path | 역할 |
 |---|---|---|
-| GET | /api/datasets | 데이터셋 목록 (행 수/열 수 포함) |
-| GET | /api/datasets/{id} | 상세 (메타 + 컬럼) |
+| GET | /api/datasets | 데이터셋 목록 (행 수/열 수, 등록일, 최근 적재일 포함) |
+| GET | /api/datasets/{id} | 상세 (메타 + 컬럼, 최근 적재일 포함) |
 | GET | /api/datasets/{id}/rows?page&size | 행 페이징 조회 |
 | POST | /api/preview | 파일 → 헤더, 샘플 10행, 타입 추정, 구조 검증 |
 | POST | /api/upload-async | 파일 + 확정 스키마 → 비동기 적재 시작, taskId 반환 |
