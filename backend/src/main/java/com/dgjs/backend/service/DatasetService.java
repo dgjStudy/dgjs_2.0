@@ -32,6 +32,7 @@ import java.io.*;
 import java.nio.charset.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -74,6 +75,7 @@ public class DatasetService {
                 .ownerId(meta.getOwnerId())
                 .orgId(meta.getOrgId())
                 .createdAt(meta.getCreatedAt())
+                .lastLoadedAt(lastLoadedOf(meta))
                 .rowCount(rowCounts.getOrDefault(meta.getId(), 0L))
                 .columnCount(columnCounts.getOrDefault(meta.getId(), 0L).intValue())
                 .build()).collect(Collectors.toList());
@@ -105,6 +107,7 @@ public class DatasetService {
                 .ownerId(meta.getOwnerId())
                 .orgId(meta.getOrgId())
                 .createdAt(meta.getCreatedAt())
+                .lastLoadedAt(lastLoadedOf(meta))
                 .columns(columnResponses)
                 .build();
     }
@@ -422,8 +425,13 @@ public class DatasetService {
         DatasetMeta meta = metaRepository.findById(datasetId)
                 .orElseThrow(() -> new IllegalStateException("적재 중 데이터셋이 삭제되었습니다."));
         meta.setStatus(DatasetMeta.STATUS_READY);
+        meta.setLastLoadedAt(LocalDateTime.now());
         metaRepository.save(meta);
         uploadTaskService.completeTask(taskId, datasetId);
+    }
+
+    private LocalDateTime lastLoadedOf(DatasetMeta meta) {
+        return meta.getLastLoadedAt() != null ? meta.getLastLoadedAt() : meta.getCreatedAt();
     }
 
     // 정리마저 실패한 경우 FAILED로 남겨 목록에서 숨김
@@ -695,7 +703,10 @@ public class DatasetService {
                 .dataJson(objectMapper.writeValueAsString(validated))
                 .build();
 
-        return rowRepository.save(row).getId();
+        Long rowId = rowRepository.save(row).getId();
+        meta.setLastLoadedAt(LocalDateTime.now());
+        metaRepository.save(meta);
+        return rowId;
     }
 
     @Transactional

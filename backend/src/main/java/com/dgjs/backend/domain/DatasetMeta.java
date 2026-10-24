@@ -45,6 +45,10 @@ public class DatasetMeta {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    // 적재 완료·행 추가 시각임. 컬럼 추가 전 데이터와 빈 수동 데이터셋은 NULL이며 응답에서 등록일로 대체함
+    @Column(name = "last_loaded_at")
+    private LocalDateTime lastLoadedAt;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();

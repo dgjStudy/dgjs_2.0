@@ -115,6 +115,7 @@ class DatasetServiceUploadTest {
         assertThat(taskService.getProgress("t1").getStatus()).isEqualTo("COMPLETED");
         assertThat(taskService.getProgress("t1").getDatasetId()).isEqualTo(7L);
         assertThat(savedMeta.get().getStatus()).isEqualTo(DatasetMeta.STATUS_READY);
+        assertThat(savedMeta.get().getLastLoadedAt()).isNotNull();
         assertThat(file).doesNotExist();
     }
 

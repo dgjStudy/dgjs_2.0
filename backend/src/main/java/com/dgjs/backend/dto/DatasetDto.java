@@ -23,6 +23,7 @@ public class DatasetDto {
         private String ownerId;
         private String orgId;
         private LocalDateTime createdAt;
+        private LocalDateTime lastLoadedAt;
         private long rowCount;
         private int columnCount;
     }
@@ -39,6 +40,7 @@ public class DatasetDto {
         private String ownerId;
         private String orgId;
         private LocalDateTime createdAt;
+        private LocalDateTime lastLoadedAt;
         private List<ColumnResponse> columns;
     }
 
