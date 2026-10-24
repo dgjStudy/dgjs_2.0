@@ -1,5 +1,7 @@
 # DGJS 2.0 아키텍처
 
+용어의 뜻은 [GLOSSARY.md](GLOSSARY.md)를 본다.
+
 ## 디렉터리 구조
 
 ```
