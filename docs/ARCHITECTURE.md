@@ -41,6 +41,9 @@ dgjs_2.0/
         │   ├─ SideMenu.jsx             사이드바 메뉴 항목 (현재 "데이터셋" 하나)
         │   ├─ UserMenu.jsx             상단 바 우측 사용자 영역 (현재 mock 사용자)
         │   ├─ PageTitle.jsx            페이지 제목·설명·우측 액션 영역 (화면 공통)
+        │   ├─ DatasetDataTab.jsx       상세 "데이터" 탭: 서버 페이징 그리드, 컬럼 표시 토글, 행 추가·수정·삭제 모달과 상태
+        │   ├─ DatasetSchemaTab.jsx     상세 "스키마" 탭: 컬럼 순번·이름·키·타입 목록
+        │   ├─ DatasetInfoTab.jsx       상세 "정보" 탭: ID, 분류, 행·열 수, 등록일, 최근 적재일, 소속·소유자
         │   ├─ ColumnSettingsContent.jsx  컬럼 표시 설정 팝오버 내용
         │   ├─ MetaEditModal.jsx        데이터셋 메타 수정 모달
         │   ├─ RowFormModal.jsx         행 추가·수정 공용 모달
@@ -51,7 +54,7 @@ dgjs_2.0/
         │   └─ ManualSchemaForm.jsx     수동 스키마 설계 폼
         ├─ pages/
         │   ├─ DatasetListPage.jsx      /, /data      데이터셋 목록·삭제
-        │   ├─ DatasetDetailPage.jsx    /data/:id     메타 정보, 서버 페이징 그리드, 컬럼 표시 토글, 메타 수정, 행 CRUD
+        │   ├─ DatasetDetailPage.jsx    /data/:id     제목·메타 수정 버튼 + 탭 3개(데이터 / 스키마 / 정보). 상세 로딩과 메타 수정만 보유하고 탭 내용은 Dataset*Tab에 위임. 행 추가 시 상세를 다시 받아 최근 적재일을 갱신
         │   └─ UploadPage.jsx           /upload       ① 엑셀/CSV 3단계 적재(상태·폴링은 이 페이지가 보유)  ② 수동 스키마 설계
         ├─ utils/formatDate.js    날짜 표시 형식(YYYY-MM-DD HH:mm)과 정렬용 타임스탬프 변환
         ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), 임시 사용자·조직(mockUser.js: 소유자·조직 ID와 상단 바 표시용 MOCK_USER)
