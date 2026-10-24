@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Breadcrumb, Card, Form, message, Space, Steps, Tabs, Typography } from 'antd';
+import { Card, Form, message, Space, Steps, Tabs } from 'antd';
 import { EditOutlined, FileExcelOutlined } from '@ant-design/icons';
 import {
   previewDatasetFile,
@@ -8,14 +8,13 @@ import {
   fetchTaskProgress,
   createManualDataset,
 } from '../api/datasetApi';
+import PageTitle from '../components/PageTitle';
 import ManualSchemaForm from '../components/ManualSchemaForm';
 import SchemaReviewStep from '../components/SchemaReviewStep';
 import UploadFileStep from '../components/UploadFileStep';
 import UploadProgressStep from '../components/UploadProgressStep';
 import { DEFAULT_CATEGORY } from '../constants/category';
 import { MOCK_OWNER_ID, MOCK_ORG_ID } from '../constants/mockUser';
-
-const { Title } = Typography;
 
 const UploadPage = () => {
   const navigate = useNavigate();
@@ -189,9 +188,9 @@ const UploadPage = () => {
 
   return (
     <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-      <Breadcrumb items={[{ title: '홈' }, { title: '데이터 적재 및 스키마 정의' }]} />
+      <PageTitle title="신규 데이터 적재" description="엑셀·CSV 파일을 올리거나 스키마를 직접 설계해 데이터셋을 만듭니다." />
 
-      <Card title={<Title level={4} style={{ margin: 0 }}>신규 데이터 적재 및 동적 스키마 정의</Title>}>
+      <Card>
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
@@ -199,11 +198,11 @@ const UploadPage = () => {
           items={[
             {
               key: 'excel',
-              label: <span><FileExcelOutlined /> 엑셀 파일 업로드 기반 적재</span>,
+              label: <span><FileExcelOutlined /> 엑셀·CSV 파일 적재</span>,
             },
             {
               key: 'manual',
-              label: <span><EditOutlined /> 직접 테이블 설계 및 생성</span>,
+              label: <span><EditOutlined /> 직접 스키마 설계</span>,
             },
           ]}
         />
