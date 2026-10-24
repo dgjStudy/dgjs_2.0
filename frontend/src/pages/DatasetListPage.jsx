@@ -1,16 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Button, Card, Tag, Space, Typography, Breadcrumb, message, Popconfirm } from 'antd';
-import { FileExcelOutlined, EyeOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Table, Button, Card, Tag, Space, Input, message, Popconfirm } from 'antd';
+import { FileExcelOutlined, EyeOutlined, PlusOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
 import { fetchDatasets, deleteDataset } from '../api/datasetApi';
 import { DEFAULT_CATEGORY } from '../constants/category';
+import { formatDateTime, toTimestamp } from '../utils/formatDate';
+import PageTitle from '../components/PageTitle';
 
-const { Title, Text } = Typography;
+const SEARCH_STYLE = { maxWidth: 360 };
 
 const DatasetListPage = () => {
   const navigate = useNavigate();
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [keyword, setKeyword] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -27,6 +30,12 @@ const DatasetListPage = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const filteredDatasets = useMemo(() => {
+    const word = keyword.trim().toLowerCase();
+    if (!word) return datasets;
+    return datasets.filter((d) => (d.name || '').toLowerCase().includes(word));
+  }, [datasets, keyword]);
 
   const handleDelete = async (id) => {
     try {
@@ -45,7 +54,7 @@ const DatasetListPage = () => {
       key: 'name',
       render: (text, record) => (
         <a onClick={() => navigate(`/data/${record.id}`)} style={{ fontWeight: 600 }}>
-          <FileExcelOutlined style={{ marginRight: 8, color: '#1890ff' }} />
+          <FileExcelOutlined style={{ marginRight: 8 }} />
           {text}
         </a>
       ),
@@ -60,19 +69,23 @@ const DatasetListPage = () => {
       title: '행 수',
       dataIndex: 'rowCount',
       key: 'rowCount',
+      sorter: (a, b) => (a.rowCount || 0) - (b.rowCount || 0),
       render: (val) => `${(val || 0).toLocaleString()} 행`,
     },
     {
-      title: '열 수',
-      dataIndex: 'columnCount',
-      key: 'columnCount',
-      render: (val) => `${val || 0} 개`,
-    },
-    {
-      title: '등록일시',
+      title: '등록일',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      render: (val) => (val ? new Date(val).toLocaleString() : '-'),
+      sorter: (a, b) => toTimestamp(a.createdAt) - toTimestamp(b.createdAt),
+      render: formatDateTime,
+    },
+    {
+      title: '최근 적재일',
+      dataIndex: 'lastLoadedAt',
+      key: 'lastLoadedAt',
+      defaultSortOrder: 'descend',
+      sorter: (a, b) => toTimestamp(a.lastLoadedAt) - toTimestamp(b.lastLoadedAt),
+      render: formatDateTime,
     },
     {
       title: '소속 / 소유자',
@@ -111,27 +124,33 @@ const DatasetListPage = () => {
 
   return (
     <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-      <Breadcrumb items={[{ title: '홈' }, { title: '데이터셋 목록' }]} />
-      <Card
-        title={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <Title level={4} style={{ margin: 0 }}>전체 데이터셋 목록</Title>
-              <Text type="secondary">적재된 데이터 플랫폼 메타데이터 및 시각화용 데이터셋입니다.</Text>
-            </div>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/upload')}>
-              신규 데이터 적재
-            </Button>
-          </div>
+      <PageTitle
+        title="데이터셋"
+        description="적재된 데이터를 검색하고 관리합니다."
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/upload')}>
+            신규 데이터 적재
+          </Button>
         }
-      >
-        <Table
-          columns={columns}
-          dataSource={datasets}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-        />
+      />
+      <Card>
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="데이터셋명 검색"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            style={SEARCH_STYLE}
+          />
+          <Table
+            columns={columns}
+            dataSource={filteredDatasets}
+            rowKey="id"
+            loading={loading}
+            pagination={{ pageSize: 10 }}
+          />
+        </Space>
       </Card>
     </Space>
   );

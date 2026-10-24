@@ -18,6 +18,7 @@
   - `components/` — 재사용 컴포넌트·모달
   - `api/` — 백엔드 호출 함수
   - `constants/` — 카테고리·컬럼 타입 옵션 등 공용 상수 (중복 정의 금지)
+  - `utils/` — 날짜 형식 변환 등 UI와 무관한 순수 함수 (`formatDate.js`)
   - `theme/` — antd 테마 토큰(`theme.js`). 색·모서리 같은 공통 값은 하드코딩하지 말고 `theme.useToken()`으로 읽는다
 - 컴포넌트 파일은 PascalCase.jsx, 함수·변수는 camelCase, 훅은 `use` 접두사. 컴포넌트 파일당 `export default` 하나.
 - 파일 하나가 길어지면(권장 기준 약 300줄) 분리를 먼저 검토한다. `App.jsx`에 새 코드를 더 쌓지 않는다.
