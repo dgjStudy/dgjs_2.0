@@ -12,9 +12,9 @@
 ## 실행 방법
 
 ### 한 번에 실행 (Windows PowerShell, 프로젝트 루트)
-- `.\dev.ps1` — 백엔드와 프론트를 Windows Terminal 탭 두 개로 실행하고, 준비되면 알려준다.
+- `.\dev.ps1` — 백엔드와 프론트를 별도 창 없이 백그라운드로 실행하고, 준비되면 알려준다. 로그는 `.dev-logs\backend.log`, `.dev-logs\frontend.log`에 기록된다(git 무시됨). 실시간으로 보려면 `Get-Content .dev-logs\backend.log -Wait`.
 - 실행 전 점검: MySQL 서비스 상태, `JAVA_HOME`(없으면 `~\.jdks`의 JDK 17 사용), `frontend\node_modules`, 8080/5173 포트 사용 여부.
-- 옵션: `-Backend`, `-Frontend`(한쪽만), `-NoWt`(Windows Terminal 대신 PowerShell 창), `-Stop`(8080/5173의 java·node 프로세스 종료, `-Backend`·`-Frontend`와 함께 쓰면 한쪽만).
+- 옵션: `-Backend`, `-Frontend`(한쪽만), `-Window`(별도 Windows Terminal 탭에 실행해 로그를 직접 봄), `-NoWt`(`-Window`와 함께 쓰며 PowerShell 창), `-Stop`(8080/5173의 java·node 프로세스 종료, `-Backend`·`-Frontend`와 함께 쓰면 한쪽만).
 - 아래 개별 실행 방법도 그대로 사용할 수 있다.
 
 ### Backend (`backend/`, Spring Boot 3.3.4 / Java 17 / MySQL)

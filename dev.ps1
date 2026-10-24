@@ -1,14 +1,16 @@
 ﻿# DGJS 2.0 개발 서버 실행 스크립트 (Windows PowerShell 5.1 이상)
-# 사용법: .\dev.ps1 [-Backend] [-Frontend] [-Stop] [-NoWt]
-#   옵션 없음 : 백엔드와 프론트를 함께 실행
+# 사용법: .\dev.ps1 [-Backend] [-Frontend] [-Stop] [-Window] [-NoWt]
+#   옵션 없음 : 백엔드와 프론트를 별도 창 없이 백그라운드로 실행하고 로그는 .dev-logs\ 에 기록
 #   -Backend / -Frontend : 한쪽만 실행 (-Stop과 함께 쓰면 한쪽만 종료)
 #   -Stop : 8080, 5173 포트를 사용 중인 java/node 프로세스를 종료
-#   -NoWt : Windows Terminal 대신 PowerShell 창을 각각 띄움
+#   -Window : 별도 창(Windows Terminal 탭)에 실행해 로그를 직접 봄
+#   -NoWt : -Window와 함께 쓰며 Windows Terminal 대신 PowerShell 창을 각각 띄움
 
 param(
     [switch]$Backend,
     [switch]$Frontend,
     [switch]$Stop,
+    [switch]$Window,
     [switch]$NoWt,
     [string]$JdkRoot = (Join-Path $HOME '.jdks'),
     [string]$MysqlService = 'MYSQL*'
@@ -116,24 +118,47 @@ function ConvertTo-EncodedCommand([string]$Command) {
 # 일부 터미널은 ComSpec(cmd.exe 경로) 환경변수가 없어 npm run이 조용히 종료되므로 새 창마다 보정함
 $comspecFix = 'if (-not $env:ComSpec) { $env:ComSpec = "$env:SystemRoot\System32\cmd.exe" }'
 
-$tabs = @()
+$servers = @()
 if ($Backend) {
-    $command = "`$Host.UI.RawUI.WindowTitle = 'DGJS backend'; $comspecFix; `$env:JAVA_HOME = '$javaHome'; Set-Location '$backendDir'; .\gradlew.bat bootRun"
-    $tabs += ConvertTo-EncodedCommand $command
+    $servers += @{
+        Title = 'DGJS backend'; Log = 'backend.log'
+        Body = "`$env:JAVA_HOME = '$javaHome'; Set-Location '$backendDir'; .\gradlew.bat bootRun"
+    }
 }
 if ($Frontend) {
-    $command = "`$Host.UI.RawUI.WindowTitle = 'DGJS frontend'; $comspecFix; Set-Location '$frontendDir'; npm run dev"
-    $tabs += ConvertTo-EncodedCommand $command
+    $servers += @{
+        Title = 'DGJS frontend'; Log = 'frontend.log'
+        Body = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Set-Location '$frontendDir'; npm run dev"
+    }
 }
 
-$wt = $null
-if (-not $NoWt) { $wt = Get-Command wt -ErrorAction SilentlyContinue }
-if ($wt) {
-    $tabArgs = $tabs | ForEach-Object { "new-tab powershell -NoExit -EncodedCommand $_" }
-    Start-Process -FilePath $wt.Source -ArgumentList ('-w new ' + ($tabArgs -join ' ; '))
+$logDir = Join-Path $root '.dev-logs'
+$procs = @()
+if ($Window) {
+    $tabs = @($servers | ForEach-Object {
+        ConvertTo-EncodedCommand "`$Host.UI.RawUI.WindowTitle = '$($_.Title)'; $comspecFix; $($_.Body)"
+    })
+    $wt = $null
+    if (-not $NoWt) { $wt = Get-Command wt -ErrorAction SilentlyContinue }
+    if ($wt) {
+        $tabArgs = $tabs | ForEach-Object { "new-tab powershell -NoExit -EncodedCommand $_" }
+        Start-Process -FilePath $wt.Source -ArgumentList ('-w new ' + ($tabArgs -join ' ; '))
+    } else {
+        foreach ($encoded in $tabs) {
+            Start-Process -FilePath 'powershell' -ArgumentList '-NoExit', '-EncodedCommand', $encoded
+        }
+    }
 } else {
-    foreach ($encoded in $tabs) {
-        Start-Process -FilePath 'powershell' -ArgumentList '-NoExit', '-EncodedCommand', $encoded
+    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    foreach ($server in $servers) {
+        $logPath = Join-Path $logDir $server.Log
+        Set-Content -Path $logPath -Value '' -Encoding UTF8
+        # node는 UTF-8로 출력하므로 프론트 본문에서 콘솔 출력 인코딩을 맞춤 (Java 17은 기본 인코딩 그대로 둠)
+        # 표준 오류도 한 줄씩 문자열로 바꿔 기록함 (PowerShell 5.1이 오류 객체 형식으로 감싸는 것을 방지)
+        $writer = 'ForEach-Object { $t = if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { [string]$_ }; $t | Out-File -FilePath ''LOGPATH'' -Append -Encoding UTF8 }'
+        $command = "$comspecFix; $($server.Body) 2>&1 | " + $writer.Replace('LOGPATH', $logPath)
+        $procs += Start-Process -FilePath 'powershell' -WindowStyle Hidden -PassThru `
+            -ArgumentList '-NoProfile', '-EncodedCommand', (ConvertTo-EncodedCommand $command)
     }
 }
 
@@ -149,10 +174,26 @@ while ($pending.Count -gt 0 -and (Get-Date) -lt $deadline) {
             $pending.Remove($key)
         }
     }
+    if ($pending.Count -gt 0 -and @($procs | Where-Object { $_.HasExited }).Count -gt 0) {
+        break
+    }
     if ($pending.Count -gt 0) { Start-Sleep -Seconds 2 }
 }
 if ($pending.Count -gt 0) {
-    Write-Host "[주의] 시간 안에 준비되지 않았습니다: $($pending.Keys -join ', '). 각 창의 로그를 확인하세요." -ForegroundColor Yellow
+    if ($Window) {
+        Write-Host "[주의] 시간 안에 준비되지 않았습니다: $($pending.Keys -join ', '). 각 창의 로그를 확인하세요." -ForegroundColor Yellow
+    } else {
+        Write-Host "[주의] 준비되지 않았거나 도중에 종료되었습니다: $($pending.Keys -join ', ')" -ForegroundColor Yellow
+        foreach ($server in $servers) {
+            $logPath = Join-Path $logDir $server.Log
+            Write-Host "--- $($server.Log) 마지막 20줄 ---"
+            Get-Content -Path $logPath -Tail 20 -ErrorAction SilentlyContinue
+        }
+        Write-Host "전체 로그: $logDir"
+    }
 } else {
+    if (-not $Window) {
+        Write-Host "로그: $logDir (실시간 보기: Get-Content '$logDir\backend.log' -Wait)"
+    }
     Write-Host '종료하려면 .\dev.ps1 -Stop 을 실행하세요.'
 }
