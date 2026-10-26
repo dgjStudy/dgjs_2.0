@@ -16,9 +16,14 @@ dgjs_2.0/
 │       │   ├─ SchedulingConfig   @EnableScheduling (종료된 작업 정리)
 │       │   ├─ GlobalExceptionHandler  @RestControllerAdvice, 오류 응답 통일
 │       │   ├─ WebConfig          CORS 허용 (localhost:5173, 3000)
-│       │   └─ OpenApiConfig      Swagger 문서 메타정보
+│       │   ├─ OpenApiConfig      Swagger 문서 메타정보
+│       │   ├─ PasswordConfig     BCrypt PasswordEncoder 빈 (spring-security-crypto, 전체 Spring Security는 A-2에서 도입)
+│       │   └─ AdminSeedRunner    서버 시작 시 사원이 없으면 초기 부서·관리자 생성 (app.seed.* 설정)
 │       ├─ controller/
-│       │   └─ DatasetController  모든 REST API (/api/**)
+│       │   ├─ DatasetController  데이터셋·적재 REST API
+│       │   ├─ DepartmentController  부서 API (/api/departments)
+│       │   ├─ ProjectController     프로젝트·참여자 API (/api/projects)
+│       │   └─ EmployeeController    사원 API (/api/employees)
 │       ├─ service/
 │       │   ├─ DatasetService     미리보기·검증, 비동기 적재, CSV 파싱, 데이터셋/행 CRUD
 │       │   ├─ SpreadsheetReader  엑셀 첫 시트를 행 단위로 읽는 진입점 (xlsx는 XlsxRowReader, xls·암호화 파일은 DOM)
@@ -26,11 +31,19 @@ dgjs_2.0/
 │       │   ├─ UploadFileStorage  업로드 파일을 임시 파일로 저장·삭제 (byte[]로 힙에 들고 있지 않음)
 │       │   ├─ UploadTaskService  비동기 적재 진행률을 taskId별로 메모리에 보관, 종료 10분 뒤 정리
 │       │   ├─ RowDataValidator   행 추가·수정 시 스키마 키·타입 검증 및 변환
+│       │   ├─ EmployeeService    사원 검색·계정 발급(임시 비밀번호)·수정·비밀번호 초기화, 마지막 활성 관리자 보호
+│       │   ├─ DepartmentService  부서 CRUD, 소속 사원이 있으면 삭제 거부
+│       │   ├─ ProjectService     프로젝트 CRUD, 참여자 추가·제거(활성 사원만, 중복 거부)
+│       │   ├─ InitialSeedService 사원이 없을 때만 초기 부서·관리자 생성
+│       │   ├─ CodeGenerator·CodeRetryExecutor  일련번호 코드(E0001, D001, P001) 생성과 키 충돌 시 재시도
+│       │   ├─ TempPasswordGenerator  임시 비밀번호 생성 (12자, 헷갈리는 문자 제외)
+│       │   ├─ InputValidator     필수·길이·이메일 형식 검증 (패키지 내부용)
 │       │   └─ ResourceNotFoundException  대상 없음(404) 예외
-│       ├─ domain/                JPA 엔티티 (DatasetMeta, DatasetColumn, DatasetRow)
+│       ├─ domain/                JPA 엔티티 (DatasetMeta, DatasetColumn, DatasetRow, Employee, Department, Project, ProjectMember)와 JobTitle·EmployeeRole·EmployeeStatus enum
 │       ├─ repository/            Spring Data JPA Repository
 │       └─ dto/
 │           ├─ DatasetDto         목록/상세/페이징/CRUD 요청·응답
+│           ├─ EmployeeDto·DepartmentDto·ProjectDto  사원·부서·프로젝트 요청·응답
 │           └─ SchemaPreviewDto   미리보기 응답, 최종 업로드 요청, 진행률 응답
 │   └─ src/test/java/com/dgjs/backend/   단위 테스트 (행 검증, CSV·엑셀 파싱, xlsx 스트리밍과 DOM 동일성, 비동기 적재 흐름, 업로드 검증, 작업 정리, 오류 응답). contextLoads만 MySQL 필요
 └─ frontend/                  React 19 / Vite / antd 6 / react-router 7
@@ -73,6 +86,21 @@ dgjs_2.0/
 | `dataset_column` | 열 정의 (헤더 1칸) | dataset_id, column_key(`col_0..N`), column_name, data_type(STRING/NUMBER/DATE/BOOLEAN), sort_order. 인덱스 `(dataset_id)` |
 | `dataset_row` | 행 1줄 | dataset_id, row_index, data_json(`{"col_0": ..., "col_1": ...}`). 인덱스 `(dataset_id, row_index)` |
 
+### 사원·부서·프로젝트 (모듈 A-1)
+
+| 테이블 | 의미 | 주요 컬럼 |
+|---|---|---|
+| `department` | 부서 | dept_code(PK, `D001`), name(UNIQUE), created_at |
+| `project` | 프로젝트 | project_code(PK, `P001`), name(UNIQUE), created_at |
+| `employee` | 사원 | emp_no(PK, `E0001`), name, email(UNIQUE, 소문자), password_hash(BCrypt), dept_code(FK → department), job_title(사원/대리/과장/차장/부장/임원), role(ADMIN/USER), status(ACTIVE/INACTIVE), must_change_password, created_at, updated_at |
+| `project_member` | 프로젝트 참여자(사원-프로젝트 N:M 연결) | id(PK), project_code(FK), emp_no(FK), joined_at. `(project_code, emp_no)` UNIQUE |
+
+- 직급·역할·상태는 DB 제약이 아니라 서버(enum)가 검증한다. 값 목록을 바꿔도 DB 변경이 필요 없다.
+- 사원은 삭제하지 않고 status로 비활성 처리한다(소유 데이터셋이 고아가 되지 않게 함). 소속 사원이 있는 부서는 삭제할 수 없고, 프로젝트를 삭제하면 참여자 연결도 함께 지운다.
+- 코드는 최댓값 + 1로 부여하며, 동시 요청으로 키가 충돌하면 새 트랜잭션에서 최대 3회 다시 시도한다.
+- 마지막 활성 관리자의 역할·상태는 바꿀 수 없다.
+- 로그인과 ADMIN 전용 접근 검사는 아직 없다(A-2). 그 전까지 관리 API는 인증 없이 열려 있다.
+
 ## API
 
 전체 명세는 백엔드 실행 후 **Swagger UI**에서 확인할 수 있다: http://localhost:8080/swagger-ui.html (JSON: `/v3/api-docs`)
@@ -88,6 +116,24 @@ dgjs_2.0/
 | POST | /api/datasets/manual | 수동 스키마로 빈 데이터셋 생성 |
 | PUT / DELETE | /api/datasets/{id} | 메타 수정 / 데이터셋 삭제 |
 | POST / PUT / DELETE | /api/datasets/{id}/rows[/{rowId}] | 행 추가 / 수정 / 삭제 |
+
+사원·부서·프로젝트 API (관리자용, 접근 검사는 A-2에서 적용):
+
+| Method | Path | 역할 |
+|---|---|---|
+| GET / POST | /api/departments | 부서 전체 목록(소속 사원 수 포함) / 생성 |
+| PUT / DELETE | /api/departments/{deptCode} | 부서명 수정 / 삭제(소속 사원이 있으면 400) |
+| GET / POST | /api/projects | 프로젝트 전체 목록(참여자 수 포함) / 생성 |
+| PUT / DELETE | /api/projects/{projectCode} | 프로젝트명 수정 / 삭제 |
+| GET / POST | /api/projects/{projectCode}/members | 참여자 목록 / 추가(`{ "empNo": "E0002" }`) |
+| DELETE | /api/projects/{projectCode}/members/{empNo} | 참여자 제거 |
+| GET | /api/employees?page&size&keyword&deptCode | 사원 목록(페이징, 이름·이메일 검색, 부서 필터) |
+| GET | /api/employees/{empNo} | 사원 상세 |
+| POST | /api/employees | 계정 발급. 응답에 임시 비밀번호가 한 번만 포함됨 |
+| PUT | /api/employees/{empNo} | 이름·이메일·부서·직급·역할·상태 수정 |
+| POST | /api/employees/{empNo}/reset-password | 비밀번호 초기화. 응답에 새 임시 비밀번호가 한 번만 포함됨 |
+
+부서·프로젝트 목록은 선택 상자와 필터에 쓰는 소량의 기준 정보라 페이징 없이 전체를 내려준다.
 
 ### 오류 응답
 - 전역 처리는 `GlobalExceptionHandler`가 한다. 컨트롤러에는 try/catch를 두지 않는다.
@@ -124,6 +170,9 @@ dgjs_2.0/
 | BOOLEAN | true/false, `"true"`/`"false"` (대소문자 무시) | 불리언 |
 
 수정 시에는 기존 값과 같은 컬럼은 검증하지 않고 기존 값을 유지한다. 과거 적재 데이터에 형식이 맞지 않는 값이 있어도 다른 컬럼을 수정할 수 있게 하기 위함이다.
+
+### 초기 관리자 시드
+서버 시작 시 `AdminSeedRunner`가 `employee`가 비어 있을 때만 초기 부서(기본 "시스템관리")와 관리자(기본 `admin@dgjs.local`)를 만든다. 값은 `app.seed.*` 설정(`application-local.yml.example` 참고)으로 바꾸며, 비밀번호를 비워 두면 임의로 만들어 서버 로그에 한 번만 출력하고 첫 로그인 때 변경하도록 표시한다.
 
 ### 수동 생성
 컬럼 정의만으로 meta + column을 저장(행 0개)하고, 상세 페이지에서 행을 추가한다.
