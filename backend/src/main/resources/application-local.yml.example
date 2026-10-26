@@ -4,3 +4,12 @@ spring:
   datasource:
     username: root
     password: 'your-mysql-password'
+
+# 초기 관리자 시드 (사원이 하나도 없을 때만 서버 시작 시 생성). 모두 생략 가능하며 기본값이 쓰인다.
+# admin-password를 비우면 임의로 만들어 서버 로그에 한 번만 출력한다.
+# app:
+#   seed:
+#     dept-name: 시스템관리
+#     admin-name: 관리자
+#     admin-email: admin@dgjs.local
+#     admin-password: 'change-me-before-use'
