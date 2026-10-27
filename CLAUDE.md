@@ -3,7 +3,7 @@
 정형 데이터(엑셀, CSV, 수동 스키마)를 적재하고, 웹에서 조회/시각화하며, 외부 시스템과 API로 연계하는 경량 데이터 플랫폼.
 
 - 파이프라인: [모듈 0: .exe 수집기] → [모듈 B: 적재/스키마] → [모듈 C: 시각화/그리드] → [모듈 A: 권한/소속] → [모듈 D: 연계 API]
-- 현재 단계: **Core MVP (모듈 B + C)**. 사용자/로그인(A)과 외부 연계 API(D)는 후순위.
+- 현재 단계: **Core MVP (모듈 B + C) 완료, 모듈 A(권한/소속) 진행 중**(사원·부서·프로젝트, 로그인·세션 구현, 데이터셋 소유·권한과 관리 화면 남음). 외부 연계 API(D)는 후순위.
 - 프로젝트 구조·데이터 모델·API·흐름: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - 개선 작업 목록(P1~P3)과 진행 상황: [docs/ROADMAP.md](docs/ROADMAP.md)
 - 스택별 세부 규칙: `backend/CLAUDE.md`, `frontend/CLAUDE.md` (해당 폴더 작업 시 자동 적용)

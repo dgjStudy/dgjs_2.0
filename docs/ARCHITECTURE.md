@@ -18,12 +18,18 @@ dgjs_2.0/
 │       │   ├─ WebConfig          CORS 허용 (localhost:5173, 3000)
 │       │   ├─ OpenApiConfig      Swagger 문서 메타정보
 │       │   ├─ PasswordConfig     BCrypt PasswordEncoder 빈 (spring-security-crypto, 전체 Spring Security는 A-2에서 도입)
-│       │   └─ AdminSeedRunner    서버 시작 시 사원이 없으면 초기 부서·관리자 생성 (app.seed.* 설정)
+│       │   ├─ AdminSeedRunner    서버 시작 시 사원이 없으면 초기 부서·관리자 생성 (app.seed.* 설정)
+│       │   ├─ SecurityConfig     접근 규칙(공개/로그인/ADMIN), CSRF(쿠키 XSRF-TOKEN + 헤더 X-XSRF-TOKEN), 세션 기반 보안 필터 체인
+│       │   ├─ AuthenticationConfig  이메일·비밀번호 인증 공급자와 AuthenticationManager
+│       │   ├─ SessionUserRefreshFilter  요청마다 사원 상태·역할을 다시 읽어 반영하고 임시 비밀번호 상태는 변경 관련 요청만 허용
+│       │   ├─ CsrfCookieFilter   모든 응답에 CSRF 쿠키가 실리게 함
+│       │   └─ SecurityErrorResponder  401·403을 { "message" } 형식으로 작성
 │       ├─ controller/
 │       │   ├─ DatasetController  데이터셋·적재 REST API
 │       │   ├─ DepartmentController  부서 API (/api/departments)
 │       │   ├─ ProjectController     프로젝트·참여자 API (/api/projects)
-│       │   └─ EmployeeController    사원 API (/api/employees)
+│       │   ├─ EmployeeController    사원 API (/api/employees)
+│       │   └─ AuthController        로그인·로그아웃·내 정보·비밀번호 변경 (/api/auth)
 │       ├─ service/
 │       │   ├─ DatasetService     미리보기·검증, 비동기 적재, CSV 파싱, 데이터셋/행 CRUD
 │       │   ├─ SpreadsheetReader  엑셀 첫 시트를 행 단위로 읽는 진입점 (xlsx는 XlsxRowReader, xls·암호화 파일은 DOM)
@@ -38,6 +44,11 @@ dgjs_2.0/
 │       │   ├─ CodeGenerator·CodeRetryExecutor  일련번호 코드(E0001, D001, P001) 생성과 키 충돌 시 재시도
 │       │   ├─ TempPasswordGenerator  임시 비밀번호 생성 (12자, 헷갈리는 문자 제외)
 │       │   ├─ InputValidator     필수·길이·이메일 형식 검증 (패키지 내부용)
+│       │   ├─ AuthService        로그인 인증(실패 횟수 제한 연동), 비밀번호 변경
+│       │   ├─ LoginAttemptLimiter  같은 이메일 5회 연속 실패 시 15분 잠금(메모리)
+│       │   ├─ PasswordPolicy     비밀번호 정책(8~64자, 영문+숫자, 현재 비밀번호·이메일과 동일 불가)
+│       │   ├─ EmployeeUserDetailsService·EmployeePrincipal  인증용 사용자 조회와 세션에 저장되는 로그인 사용자 정보
+│       │   ├─ LoginFailedException(401)·LoginLockedException(429)  로그인 실패·잠금 예외
 │       │   └─ ResourceNotFoundException  대상 없음(404) 예외
 │       ├─ domain/                JPA 엔티티 (DatasetMeta, DatasetColumn, DatasetRow, Employee, Department, Project, ProjectMember)와 JobTitle·EmployeeRole·EmployeeStatus enum
 │       ├─ repository/            Spring Data JPA Repository
@@ -49,12 +60,14 @@ dgjs_2.0/
 └─ frontend/                  React 19 / Vite / antd 6 / react-router 7
     └─ src/
         ├─ main.jsx               엔트리
-        ├─ App.jsx                ConfigProvider(테마) + 라우터 (경로와 페이지 연결만 담당, `/`는 `/data`로 이동)
+        ├─ App.jsx                ConfigProvider(테마) + AuthProvider + 라우터. `/login`만 공개이고 나머지는 RequireAuth 아래(`/`는 `/data`로 이동)
+        ├─ auth/                  AuthProvider(현재 로그인 사용자, 로그인·로그아웃, 401 시 사용자 비움), AuthContext, useAuth
         ├─ theme/theme.js         antd 테마 토큰. getThemeConfig('light' | 'dark') (다크 전환 기능은 후속)
         ├─ components/
         │   ├─ MainLayout.jsx           공통 레이아웃 (상단 바 + 본문). 메뉴 버튼으로 사이드바를 오버레이(Drawer)로 연다
         │   ├─ SideMenu.jsx             사이드바 메뉴 항목 (현재 "데이터셋" 하나)
-        │   ├─ UserMenu.jsx             상단 바 우측 사용자 영역 (현재 mock 사용자)
+        │   ├─ UserMenu.jsx             상단 바 우측 사용자 영역 (실제 로그인 사용자, 내 정보·로그아웃)
+        │   ├─ RequireAuth.jsx          비로그인이면 /login으로(원래 화면 기억), 임시 비밀번호 상태면 /me로 이동시키는 라우트 가드
         │   ├─ PageTitle.jsx            페이지 제목·설명·우측 액션 영역 (화면 공통)
         │   ├─ DatasetDataTab.jsx       상세 "데이터" 탭: 서버 페이징 그리드, 컬럼 표시 토글, 행 추가·수정·삭제 모달과 상태
         │   ├─ DatasetSchemaTab.jsx     상세 "스키마" 탭: 컬럼 순번·이름·키·타입 목록
@@ -72,8 +85,11 @@ dgjs_2.0/
         │   ├─ DatasetDetailPage.jsx    /data/:id     제목·메타 수정 버튼 + 탭 3개(데이터 / 스키마 / 정보). 상세 로딩과 메타 수정만 보유하고 탭 내용은 Dataset*Tab에 위임. 행 추가 시 상세를 다시 받아 최근 적재일을 갱신
         │   └─ UploadPage.jsx           /upload       ① 엑셀/CSV 3단계 적재(상태·폴링은 이 페이지가 보유)  ② 수동 스키마 설계
         ├─ utils/formatDate.js    날짜 표시 형식(YYYY-MM-DD HH:mm)과 정렬용 타임스탬프 변환
-        ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), 임시 사용자·조직(mockUser.js: 소유자·조직 ID와 상단 바 표시용 MOCK_USER)
-        └─ api/datasetApi.js      백엔드 호출 fetch 래퍼 (상대경로 /api, 개발 서버는 vite.config.js의 server.proxy가 localhost:8080으로 전달)
+        ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), 임시 소유자·조직(mockUser.js: 업로드 폼용 MOCK_OWNER_ID, MOCK_ORG_ID, A-3에서 제거 예정)
+        └─ api/
+            ├─ apiClient.js       공통 요청(apiFetch): 세션 쿠키 전달, 변경 요청에 CSRF 헤더 첨부, 401 시 등록된 처리 함수 호출. 상대경로 /api이며 개발 서버는 vite.config.js의 server.proxy가 localhost:8080으로 전달
+            ├─ authApi.js         로그인·로그아웃·내 정보·비밀번호 변경
+            └─ datasetApi.js      데이터셋·적재 호출
 ```
 
 ## 데이터 모델
@@ -99,7 +115,7 @@ dgjs_2.0/
 - 사원은 삭제하지 않고 status로 비활성 처리한다(소유 데이터셋이 고아가 되지 않게 함). 소속 사원이 있는 부서는 삭제할 수 없고, 프로젝트를 삭제하면 참여자 연결도 함께 지운다.
 - 코드는 최댓값 + 1로 부여하며, 동시 요청으로 키가 충돌하면 새 트랜잭션에서 최대 3회 다시 시도한다.
 - 마지막 활성 관리자의 역할·상태는 바꿀 수 없다.
-- 로그인과 ADMIN 전용 접근 검사는 아직 없다(A-2). 그 전까지 관리 API는 인증 없이 열려 있다.
+- 접근 검사는 `SecurityConfig`가 한다(아래 "인증·권한" 참고). 데이터셋 소유자·프로젝트 참여자에 따른 수정 권한은 A-3에서 추가한다.
 
 ## API
 
@@ -117,7 +133,7 @@ dgjs_2.0/
 | PUT / DELETE | /api/datasets/{id} | 메타 수정 / 데이터셋 삭제 |
 | POST / PUT / DELETE | /api/datasets/{id}/rows[/{rowId}] | 행 추가 / 수정 / 삭제 |
 
-사원·부서·프로젝트 API (관리자용, 접근 검사는 A-2에서 적용):
+사원·부서·프로젝트 API (`/api/employees/**` 전체와 부서·프로젝트의 쓰기는 ADMIN만, 부서·프로젝트 조회는 로그인한 모두):
 
 | Method | Path | 역할 |
 |---|---|---|
@@ -170,6 +186,30 @@ dgjs_2.0/
 | BOOLEAN | true/false, `"true"`/`"false"` (대소문자 무시) | 불리언 |
 
 수정 시에는 기존 값과 같은 컬럼은 검증하지 않고 기존 값을 유지한다. 과거 적재 데이터에 형식이 맞지 않는 값이 있어도 다른 컬럼을 수정할 수 있게 하기 위함이다.
+
+### 인증·권한 (모듈 A-2)
+
+| 구분 | 대상 | 허용 |
+|---|---|---|
+| 공개 | `POST /api/auth/login`, Swagger 화면(`/swagger-ui/**`, `/v3/api-docs/**`) | 누구나 |
+| 로그인 | `/api/auth/**` 나머지, 데이터셋·적재 API 전체, 부서·프로젝트 조회 | 로그인한 모두 |
+| ADMIN | `/api/employees/**`, 부서·프로젝트 쓰기(참여자 관리 포함) | ADMIN만 |
+
+- 서버 세션 방식이다. 쿠키는 HttpOnly, SameSite=Lax이고 유휴 30분 뒤 만료된다. 로그인 성공 때 세션 ID를 교체한다.
+- 로그인 실패는 이메일 없음·비밀번호 틀림·비활성 계정을 구분하지 않고 같은 문구(401)로 응답한다. 같은 이메일로 5회 연속 실패하면 15분 동안 429로 막는다(메모리, 재시작 시 초기화).
+- CSRF 방어가 켜져 있다. 서버가 쿠키 `XSRF-TOKEN`을 내려주고, 변경 요청(POST·PUT·DELETE)은 프론트 `apiFetch`가 같은 값을 `X-XSRF-TOKEN` 헤더로 보낸다. Swagger 화면도 같은 방식으로 동작하도록 설정했다.
+- `SessionUserRefreshFilter`가 요청마다 사원을 다시 조회해, 비활성 처리·삭제는 세션을 끊고(401) 역할 변경은 즉시 반영한다.
+- `must_change_password`가 true이면 `/api/auth/me`, `/api/auth/logout`, `/api/auth/change-password` 외의 요청은 403이다. 프론트는 `/api/auth/me`의 `mustChangePassword`를 보고 내 정보 화면(`/me`)으로 이동시킨다.
+- 401·403 응답도 `{ "message": ... }` 형식이다.
+
+인증 API:
+
+| Method | Path | 역할 |
+|---|---|---|
+| POST | /api/auth/login | `{ email, password }` → 사용자 정보. 세션 쿠키 발급 |
+| POST | /api/auth/logout | 세션 삭제 |
+| GET | /api/auth/me | 현재 사용자 정보 (비로그인이면 401) |
+| POST | /api/auth/change-password | `{ currentPassword, newPassword }` → 변경 후 사용자 정보 |
 
 ### 초기 관리자 시드
 서버 시작 시 `AdminSeedRunner`가 `employee`가 비어 있을 때만 초기 부서(기본 "시스템관리")와 관리자(기본 `admin@dgjs.local`)를 만든다. 값은 `app.seed.*` 설정(`application-local.yml.example` 참고)으로 바꾸며, 비밀번호를 비워 두면 임의로 만들어 서버 로그에 한 번만 출력하고 첫 로그인 때 변경하도록 표시한다.
