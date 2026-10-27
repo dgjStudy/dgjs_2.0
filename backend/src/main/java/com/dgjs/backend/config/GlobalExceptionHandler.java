@@ -1,5 +1,7 @@
 package com.dgjs.backend.config;
 
+import com.dgjs.backend.service.LoginFailedException;
+import com.dgjs.backend.service.LoginLockedException;
 import com.dgjs.backend.service.ResourceNotFoundException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +27,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(ResourceNotFoundException e) {
         return body(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    @ExceptionHandler(LoginFailedException.class)
+    public ResponseEntity<Map<String, String>> handleLoginFailed(LoginFailedException e) {
+        return body(HttpStatus.UNAUTHORIZED, e.getMessage());
+    }
+
+    @ExceptionHandler(LoginLockedException.class)
+    public ResponseEntity<Map<String, String>> handleLoginLocked(LoginLockedException e) {
+        return body(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
