@@ -1,27 +1,44 @@
-import { Avatar, Dropdown, Space, Typography } from 'antd';
-import { DownOutlined, UserOutlined } from '@ant-design/icons';
-import { MOCK_USER } from '../constants/mockUser';
+import { useNavigate } from 'react-router-dom';
+import { Avatar, Dropdown, Space, Typography, message } from 'antd';
+import { DownOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
+import { useAuth } from '../auth/useAuth';
 
 const { Text } = Typography;
 
 const TEXT_BLOCK_STYLE = { display: 'flex', flexDirection: 'column', lineHeight: 1.3, textAlign: 'left' };
 
-const UserMenu = () => (
-  <Dropdown
-    menu={{ items: [{ key: 'me', label: '내 정보 (준비 중)', disabled: true }] }}
-    trigger={['click']}
-  >
-    <Space size={10} style={{ cursor: 'pointer' }}>
-      <Avatar icon={<UserOutlined />} />
-      <div style={TEXT_BLOCK_STYLE}>
-        <Text strong>{MOCK_USER.name}</Text>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {MOCK_USER.deptName} · {MOCK_USER.jobTitle}
-        </Text>
-      </div>
-      <DownOutlined style={{ fontSize: 12 }} />
-    </Space>
-  </Dropdown>
-);
+const UserMenu = () => {
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (err) {
+      message.error(err.message || '로그아웃에 실패했습니다.');
+    }
+  };
+
+  const items = [
+    { key: 'me', icon: <UserOutlined />, label: '내 정보', onClick: () => navigate('/me') },
+    { type: 'divider' },
+    { key: 'logout', icon: <LogoutOutlined />, label: '로그아웃', danger: true, onClick: handleLogout },
+  ];
+
+  return (
+    <Dropdown menu={{ items }} trigger={['click']}>
+      <Space size={10} style={{ cursor: 'pointer' }}>
+        <Avatar icon={<UserOutlined />} />
+        <div style={TEXT_BLOCK_STYLE}>
+          <Text strong>{user.name}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {user.deptName} · {user.jobTitle}
+          </Text>
+        </div>
+        <DownOutlined style={{ fontSize: 12 }} />
+      </Space>
+    </Dropdown>
+  );
+};
 
 export default UserMenu;

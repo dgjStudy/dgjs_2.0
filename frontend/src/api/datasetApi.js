@@ -1,12 +1,7 @@
-const API_BASE_URL = '/api';
-
-const toError = async (response, fallback) => {
-  const errorData = await response.json().catch(() => ({}));
-  return new Error(errorData.message || fallback);
-};
+import { apiFetch, toError } from './apiClient';
 
 export const fetchDatasets = async () => {
-  const response = await fetch(`${API_BASE_URL}/datasets`);
+  const response = await apiFetch('/datasets');
   if (!response.ok) {
     throw await toError(response, '데이터셋 목록을 불러오는 중 오류가 발생했습니다.');
   }
@@ -14,7 +9,7 @@ export const fetchDatasets = async () => {
 };
 
 export const fetchDatasetDetail = async (id) => {
-  const response = await fetch(`${API_BASE_URL}/datasets/${id}`);
+  const response = await apiFetch(`/datasets/${id}`);
   if (!response.ok) {
     throw await toError(response, `데이터셋 상세 정보(ID: ${id})를 불러오지 못했습니다.`);
   }
@@ -22,7 +17,7 @@ export const fetchDatasetDetail = async (id) => {
 };
 
 export const fetchDatasetRows = async (id, page = 0, size = 20) => {
-  const response = await fetch(`${API_BASE_URL}/datasets/${id}/rows?page=${page}&size=${size}`);
+  const response = await apiFetch(`/datasets/${id}/rows?page=${page}&size=${size}`);
   if (!response.ok) {
     throw await toError(response, `행 데이터를 불러오지 못했습니다.`);
   }
@@ -30,7 +25,7 @@ export const fetchDatasetRows = async (id, page = 0, size = 20) => {
 };
 
 export const previewDatasetFile = async (formData) => {
-  const response = await fetch(`${API_BASE_URL}/preview`, {
+  const response = await apiFetch(`/preview`, {
     method: 'POST',
     body: formData,
   });
@@ -41,7 +36,7 @@ export const previewDatasetFile = async (formData) => {
 };
 
 export const uploadDatasetAsync = async (formData) => {
-  const response = await fetch(`${API_BASE_URL}/upload-async`, {
+  const response = await apiFetch(`/upload-async`, {
     method: 'POST',
     body: formData,
   });
@@ -52,7 +47,7 @@ export const uploadDatasetAsync = async (formData) => {
 };
 
 export const fetchTaskProgress = async (taskId) => {
-  const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/progress`);
+  const response = await apiFetch(`/tasks/${taskId}/progress`);
   if (!response.ok) {
     throw new Error('진행 상태를 조회하지 못했습니다.');
   }
@@ -60,7 +55,7 @@ export const fetchTaskProgress = async (taskId) => {
 };
 
 export const deleteDataset = async (id) => {
-  const response = await fetch(`${API_BASE_URL}/datasets/${id}`, {
+  const response = await apiFetch(`/datasets/${id}`, {
     method: 'DELETE',
   });
   if (!response.ok) {
@@ -70,7 +65,7 @@ export const deleteDataset = async (id) => {
 };
 
 export const createManualDataset = async (payload) => {
-  const response = await fetch(`${API_BASE_URL}/datasets/manual`, {
+  const response = await apiFetch(`/datasets/manual`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -84,7 +79,7 @@ export const createManualDataset = async (payload) => {
 };
 
 export const updateDatasetMeta = async (id, meta) => {
-  const response = await fetch(`${API_BASE_URL}/datasets/${id}`, {
+  const response = await apiFetch(`/datasets/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -98,7 +93,7 @@ export const updateDatasetMeta = async (id, meta) => {
 };
 
 export const addDatasetRow = async (datasetId, rowData) => {
-  const response = await fetch(`${API_BASE_URL}/datasets/${datasetId}/rows`, {
+  const response = await apiFetch(`/datasets/${datasetId}/rows`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -112,7 +107,7 @@ export const addDatasetRow = async (datasetId, rowData) => {
 };
 
 export const updateDatasetRow = async (datasetId, rowId, rowData) => {
-  const response = await fetch(`${API_BASE_URL}/datasets/${datasetId}/rows/${rowId}`, {
+  const response = await apiFetch(`/datasets/${datasetId}/rows/${rowId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -126,7 +121,7 @@ export const updateDatasetRow = async (datasetId, rowId, rowData) => {
 };
 
 export const deleteDatasetRow = async (datasetId, rowId) => {
-  const response = await fetch(`${API_BASE_URL}/datasets/${datasetId}/rows/${rowId}`, {
+  const response = await apiFetch(`/datasets/${datasetId}/rows/${rowId}`, {
     method: 'DELETE',
   });
   if (!response.ok) {
