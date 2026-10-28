@@ -2,10 +2,12 @@ package com.dgjs.backend.controller;
 
 import com.dgjs.backend.dto.EmployeeDto;
 import com.dgjs.backend.dto.ProjectDto;
+import com.dgjs.backend.service.EmployeePrincipal;
 import com.dgjs.backend.service.ProjectService;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,6 +23,12 @@ public class ProjectController {
     @GetMapping
     public ResponseEntity<List<ProjectDto.Response>> getProjects() {
         return ResponseEntity.ok(projectService.getAll());
+    }
+
+    @Operation(summary = "내가 데이터셋을 연결할 수 있는 프로젝트 목록 (ADMIN은 전체, 그 밖에는 참여 중인 프로젝트)")
+    @GetMapping("/mine")
+    public ResponseEntity<List<ProjectDto.Response>> getMyProjects(@AuthenticationPrincipal EmployeePrincipal user) {
+        return ResponseEntity.ok(projectService.getMine(user));
     }
 
     @Operation(summary = "프로젝트 생성 (코드는 P001 형식으로 자동 부여)")

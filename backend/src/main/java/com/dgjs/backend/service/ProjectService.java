@@ -7,6 +7,7 @@ import com.dgjs.backend.domain.ProjectMember;
 import com.dgjs.backend.dto.EmployeeDto;
 import com.dgjs.backend.dto.ProjectDto;
 import com.dgjs.backend.repository.CodeCount;
+import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.EmployeeRepository;
 import com.dgjs.backend.repository.ProjectMemberRepository;
 import com.dgjs.backend.repository.ProjectRepository;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,6 +31,8 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final ProjectMemberRepository memberRepository;
     private final EmployeeRepository employeeRepository;
+    private final DatasetMetaRepository datasetMetaRepository;
+    private final DatasetAccessPolicy accessPolicy;
     private final CodeRetryExecutor codeRetryExecutor;
 
     @Transactional(readOnly = true)
@@ -37,6 +41,16 @@ public class ProjectService {
         return projectRepository.findAllByOrderByProjectCodeAsc().stream()
                 .map(p -> toResponse(p, counts.getOrDefault(p.getProjectCode(), 0L)))
                 .collect(Collectors.toList());
+    }
+
+    // 데이터셋을 연결할 수 있는 프로젝트 목록임. ADMIN은 전체, 그 밖에는 참여 중인 프로젝트만
+    @Transactional(readOnly = true)
+    public List<ProjectDto.Response> getMine(EmployeePrincipal user) {
+        if (accessPolicy.isAdmin(user)) {
+            return getAll();
+        }
+        Set<String> codes = accessPolicy.myProjectCodes(user);
+        return getAll().stream().filter(p -> codes.contains(p.getProjectCode())).collect(Collectors.toList());
     }
 
     public ProjectDto.Response create(ProjectDto.Request request) {
@@ -66,6 +80,7 @@ public class ProjectService {
     @Transactional
     public void delete(String projectCode) {
         Project project = find(projectCode);
+        datasetMetaRepository.clearProject(projectCode);
         memberRepository.deleteByProjectCode(projectCode);
         projectRepository.delete(project);
     }

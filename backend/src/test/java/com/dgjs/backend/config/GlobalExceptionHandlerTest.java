@@ -1,5 +1,6 @@
 package com.dgjs.backend.config;
 
+import com.dgjs.backend.service.ForbiddenOperationException;
 import com.dgjs.backend.service.ResourceNotFoundException;
 import com.fasterxml.jackson.core.JsonParseException;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,12 @@ class GlobalExceptionHandlerTest {
     void 대상_없음은_404로_응답한다() {
         assertResponse(handler.handleNotFound(new ResourceNotFoundException("데이터셋을 찾을 수 없습니다.")),
                 HttpStatus.NOT_FOUND, "데이터셋을 찾을 수 없습니다.");
+    }
+
+    @Test
+    void 권한_없음은_403으로_응답한다() {
+        assertResponse(handler.handleForbidden(new ForbiddenOperationException("수정할 권한이 없습니다.")),
+                HttpStatus.FORBIDDEN, "수정할 권한이 없습니다.");
     }
 
     @Test

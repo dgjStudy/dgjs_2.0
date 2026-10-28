@@ -3,6 +3,8 @@ package com.dgjs.backend.service;
 import com.dgjs.backend.domain.Department;
 import com.dgjs.backend.domain.Employee;
 import com.dgjs.backend.repository.CodeCount;
+import com.dgjs.backend.repository.EmployeeRepository;
+import com.dgjs.backend.repository.ProjectMemberRepository;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -39,6 +41,18 @@ final class TestFixtures {
                 .role(role)
                 .status(status)
                 .build();
+    }
+
+    static EmployeePrincipal principal(String empNo, String role) {
+        return EmployeePrincipal.from(employee(empNo, role, "ACTIVE", department("D001", "개발팀")));
+    }
+
+    static DatasetAccessPolicy accessPolicy() {
+        return new DatasetAccessPolicy(mock(ProjectMemberRepository.class));
+    }
+
+    static DatasetResponseAssembler assembler() {
+        return new DatasetResponseAssembler(mock(EmployeeRepository.class), accessPolicy());
     }
 
     static CodeCount codeCount(String code, long cnt) {

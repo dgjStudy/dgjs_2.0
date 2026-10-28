@@ -6,12 +6,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dgjs.backend.domain.DatasetColumn;
 import com.dgjs.backend.domain.DatasetMeta;
 import com.dgjs.backend.domain.DatasetRow;
+import com.dgjs.backend.domain.Project;
 import com.dgjs.backend.dto.DatasetDto;
 import com.dgjs.backend.dto.SchemaPreviewDto;
 import com.dgjs.backend.repository.DatasetColumnRepository;
 import com.dgjs.backend.repository.DatasetCount;
 import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.DatasetRowRepository;
+import com.dgjs.backend.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
@@ -49,13 +51,16 @@ public class DatasetService {
     private final UploadFileStorage uploadFileStorage;
     private final TransactionTemplate transactionTemplate;
     private final JdbcTemplate jdbcTemplate;
+    private final ProjectRepository projectRepository;
+    private final DatasetAccessPolicy accessPolicy;
+    private final DatasetResponseAssembler responseAssembler;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final int PREVIEW_ROW_LIMIT = 10;
     private static final String CSV_FORMAT_ERROR = "CSV 형식이 올바르지 않습니다. 따옴표 짝이 맞는지 확인해 주세요.";
 
     @Transactional(readOnly = true)
-    public List<DatasetDto.SummaryResponse> getAllDatasets() {
+    public List<DatasetDto.SummaryResponse> getAllDatasets(EmployeePrincipal user) {
         List<DatasetMeta> metaList = metaRepository.findAllReadyOrderByCreatedAtDesc();
         if (metaList.isEmpty()) {
             return List.of();
@@ -67,22 +72,11 @@ public class DatasetService {
         Map<Long, Long> columnCounts = columnRepository.countGroupByDatasetId(ids).stream()
                 .collect(Collectors.toMap(DatasetCount::getDatasetId, DatasetCount::getCnt));
 
-        return metaList.stream().map(meta -> DatasetDto.SummaryResponse.builder()
-                .id(meta.getId())
-                .name(meta.getName())
-                .description(meta.getDescription())
-                .category(meta.getCategory())
-                .ownerId(meta.getOwnerId())
-                .orgId(meta.getOrgId())
-                .createdAt(meta.getCreatedAt())
-                .lastLoadedAt(lastLoadedOf(meta))
-                .rowCount(rowCounts.getOrDefault(meta.getId(), 0L))
-                .columnCount(columnCounts.getOrDefault(meta.getId(), 0L).intValue())
-                .build()).collect(Collectors.toList());
+        return responseAssembler.summaries(metaList, rowCounts, columnCounts, user);
     }
 
     @Transactional(readOnly = true)
-    public DatasetDto.DetailResponse getDatasetDetail(Long datasetId) {
+    public DatasetDto.DetailResponse getDatasetDetail(Long datasetId, EmployeePrincipal user) {
         DatasetMeta meta = metaRepository.findById(datasetId)
                 .orElseThrow(() -> datasetNotFound(datasetId));
         if (meta.getStatus() != null && !DatasetMeta.STATUS_READY.equals(meta.getStatus())) {
@@ -99,17 +93,7 @@ public class DatasetService {
                         .build())
                 .collect(Collectors.toList());
 
-        return DatasetDto.DetailResponse.builder()
-                .id(meta.getId())
-                .name(meta.getName())
-                .description(meta.getDescription())
-                .category(meta.getCategory())
-                .ownerId(meta.getOwnerId())
-                .orgId(meta.getOrgId())
-                .createdAt(meta.getCreatedAt())
-                .lastLoadedAt(lastLoadedOf(meta))
-                .columns(columnResponses)
-                .build();
+        return responseAssembler.detail(meta, columnResponses, user);
     }
 
     @Transactional(readOnly = true)
@@ -245,7 +229,8 @@ public class DatasetService {
     }
 
     @Async
-    public void processAsyncUpload(String taskId, Path uploadedFile, String originalFilename, SchemaPreviewDto.FinalUploadRequest request) {
+    public void processAsyncUpload(String taskId, Path uploadedFile, String originalFilename,
+            SchemaPreviewDto.FinalUploadRequest request, String ownerEmpNo) {
         Long datasetId = null;
         try {
             uploadTaskService.updateProgress(taskId, 10, "데이터 메타정보 생성 중...");
@@ -259,8 +244,8 @@ public class DatasetService {
                     .name(datasetName)
                     .description(request.getDescription())
                     .category(request.getCategory() != null ? request.getCategory() : "기타")
-                    .ownerId(request.getOwnerId() != null ? request.getOwnerId() : "user_admin")
-                    .orgId(request.getOrgId() != null ? request.getOrgId() : "org_hq")
+                    .ownerId(ownerEmpNo)
+                    .project(findProject(request.getProjectCode()))
                     .status(DatasetMeta.STATUS_PROCESSING)
                     .build();
 
@@ -430,10 +415,6 @@ public class DatasetService {
         uploadTaskService.completeTask(taskId, datasetId);
     }
 
-    private LocalDateTime lastLoadedOf(DatasetMeta meta) {
-        return meta.getLastLoadedAt() != null ? meta.getLastLoadedAt() : meta.getCreatedAt();
-    }
-
     // 정리마저 실패한 경우 FAILED로 남겨 목록에서 숨김
     private void cleanupFailedUpload(Long datasetId) {
         if (datasetId == null) return;
@@ -454,7 +435,10 @@ public class DatasetService {
     }
 
     @Transactional
-    public void deleteDataset(Long datasetId) {
+    public void deleteDataset(Long datasetId, EmployeePrincipal user) {
+        DatasetMeta meta = metaRepository.findById(datasetId)
+                .orElseThrow(() -> datasetNotFound(datasetId));
+        accessPolicy.requireManage(user, meta, "삭제");
         deleteDatasetInternal(datasetId);
     }
 
@@ -484,7 +468,7 @@ public class DatasetService {
     }
 
     @Transactional
-    public Long createManualDataset(DatasetDto.ManualCreateRequest request) {
+    public Long createManualDataset(DatasetDto.ManualCreateRequest request, EmployeePrincipal user) {
         if (request.getName() == null || request.getName().trim().isEmpty()) {
             throw new IllegalArgumentException("데이터셋 이름은 필수입니다.");
         }
@@ -492,12 +476,14 @@ public class DatasetService {
             throw new IllegalArgumentException("최소 1개 이상의 컬럼 정의가 필요합니다.");
         }
 
+        Project project = resolveAttachableProject(user, request.getProjectCode());
+
         DatasetMeta meta = DatasetMeta.builder()
                 .name(request.getName().trim())
                 .description(request.getDescription())
                 .category(request.getCategory() != null && !request.getCategory().trim().isEmpty() ? request.getCategory() : "기타")
-                .ownerId(request.getOwnerId() != null && !request.getOwnerId().trim().isEmpty() ? request.getOwnerId() : "user_admin")
-                .orgId(request.getOrgId() != null && !request.getOrgId().trim().isEmpty() ? request.getOrgId() : "org_hq")
+                .ownerId(user.getEmpNo())
+                .project(project)
                 .build();
 
         meta = metaRepository.save(meta);
@@ -666,9 +652,10 @@ public class DatasetService {
     }
 
     @Transactional
-    public void updateDatasetMeta(Long id, DatasetDto.MetaUpdateRequest request) {
+    public void updateDatasetMeta(Long id, DatasetDto.MetaUpdateRequest request, EmployeePrincipal user) {
         DatasetMeta meta = metaRepository.findById(id)
                 .orElseThrow(() -> datasetNotFound(id));
+        accessPolicy.requireEdit(user, meta);
         if (request.getName() != null && !request.getName().trim().isEmpty()) {
             meta.setName(request.getName().trim());
         }
@@ -678,17 +665,32 @@ public class DatasetService {
         if (request.getCategory() != null && !request.getCategory().trim().isEmpty()) {
             meta.setCategory(request.getCategory().trim());
         }
+        changeProjectIfRequested(meta, request.getProjectCode(), user);
         metaRepository.save(meta);
     }
 
+    // 프로젝트 연결을 바꾸면 그 프로젝트 참여자들의 수정 권한이 달라지므로 소유자·관리자만 할 수 있음
+    private void changeProjectIfRequested(DatasetMeta meta, String requested, EmployeePrincipal user) {
+        if (requested == null) {
+            return;
+        }
+        String target = requested.isBlank() ? null : requested.trim();
+        if (Objects.equals(DatasetAccessPolicy.projectCodeOf(meta), target)) {
+            return;
+        }
+        accessPolicy.requireManage(user, meta, "프로젝트 연결 변경");
+        meta.setProject(resolveAttachableProject(user, target));
+    }
+
     @Transactional
-    public Long addRow(Long datasetId, Map<String, Object> rowData) throws JsonProcessingException {
+    public Long addRow(Long datasetId, Map<String, Object> rowData, EmployeePrincipal user) throws JsonProcessingException {
         DatasetMeta meta = metaRepository.findById(datasetId)
                 .orElseThrow(() -> datasetNotFound(datasetId));
         // 적재 중이거나 실패한 데이터셋에 행을 넣으면 배치 적재의 행 번호와 충돌할 수 있음
         if (meta.getStatus() != null && !DatasetMeta.STATUS_READY.equals(meta.getStatus())) {
             throw datasetNotFound(datasetId);
         }
+        accessPolicy.requireEdit(user, meta);
 
         List<DatasetColumn> columns = columnRepository.findByDatasetIdOrderBySortOrderAsc(datasetId);
         Map<String, Object> validated = rowDataValidator.validate(columns, rowData, null);
@@ -710,7 +712,9 @@ public class DatasetService {
     }
 
     @Transactional
-    public void updateRow(Long datasetId, Long rowId, Map<String, Object> rowData) throws JsonProcessingException {
+    public void updateRow(Long datasetId, Long rowId, Map<String, Object> rowData, EmployeePrincipal user)
+            throws JsonProcessingException {
+        requireEditable(datasetId, user);
         DatasetRow row = rowRepository.findByIdAndDatasetId(rowId, datasetId)
                 .orElseThrow(() -> rowNotFound(rowId));
 
@@ -723,10 +727,40 @@ public class DatasetService {
     }
 
     @Transactional
-    public void deleteRow(Long datasetId, Long rowId) {
+    public void deleteRow(Long datasetId, Long rowId, EmployeePrincipal user) {
+        requireEditable(datasetId, user);
         DatasetRow row = rowRepository.findByIdAndDatasetId(rowId, datasetId)
                 .orElseThrow(() -> rowNotFound(rowId));
         rowRepository.delete(row);
+    }
+
+    private void requireEditable(Long datasetId, EmployeePrincipal user) {
+        DatasetMeta meta = metaRepository.findById(datasetId)
+                .orElseThrow(() -> datasetNotFound(datasetId));
+        accessPolicy.requireEdit(user, meta);
+    }
+
+    // 업로드 시작 전에 동기 구간에서 프로젝트 연결 가능 여부를 확인함
+    public void checkProjectAttachable(EmployeePrincipal user, String projectCode) {
+        resolveAttachableProject(user, projectCode);
+    }
+
+    private Project resolveAttachableProject(EmployeePrincipal user, String projectCode) {
+        Project project = findProject(projectCode);
+        if (project != null) {
+            accessPolicy.requireAttach(user, project.getProjectCode());
+        }
+        return project;
+    }
+
+    // 비어 있으면 미지정(null)임
+    private Project findProject(String projectCode) {
+        if (projectCode == null || projectCode.isBlank()) {
+            return null;
+        }
+        String code = projectCode.trim();
+        return projectRepository.findById(code)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 프로젝트입니다. (코드: " + code + ")"));
     }
 
     private ResourceNotFoundException datasetNotFound(Long datasetId) {

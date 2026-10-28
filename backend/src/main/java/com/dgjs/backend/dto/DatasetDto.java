@@ -21,7 +21,11 @@ public class DatasetDto {
         private String description;
         private String category;
         private String ownerId;
-        private String orgId;
+        private String ownerName;
+        private String projectCode;
+        private String projectName;
+        private boolean canEdit;
+        private boolean canDelete;
         private LocalDateTime createdAt;
         private LocalDateTime lastLoadedAt;
         private long rowCount;
@@ -38,7 +42,11 @@ public class DatasetDto {
         private String description;
         private String category;
         private String ownerId;
-        private String orgId;
+        private String ownerName;
+        private String projectCode;
+        private String projectName;
+        private boolean canEdit;
+        private boolean canDelete;
         private LocalDateTime createdAt;
         private LocalDateTime lastLoadedAt;
         private List<ColumnResponse> columns;
@@ -61,8 +69,7 @@ public class DatasetDto {
         private String name;
         private String description;
         private String category;
-        private String ownerId;
-        private String orgId;
+        private String projectCode;
         private List<ManualColumnDef> columns;
     }
 
@@ -93,5 +100,7 @@ public class DatasetDto {
         private String name;
         private String description;
         private String category;
+        // null은 연결 변경 없음, 빈 문자열은 미지정으로 바꿈
+        private String projectCode;
     }
 }

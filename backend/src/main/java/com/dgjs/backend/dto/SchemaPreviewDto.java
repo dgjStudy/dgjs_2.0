@@ -1,5 +1,6 @@
 package com.dgjs.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -36,12 +37,12 @@ public class SchemaPreviewDto {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class FinalUploadRequest {
         private String name;
         private String description;
         private String category;
-        private String ownerId;
-        private String orgId;
+        private String projectCode;
         private List<ColumnInfo> columns;
     }
 

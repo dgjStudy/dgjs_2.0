@@ -12,7 +12,7 @@
 
 ## 데이터 저장 원칙
 - 사용자별 `CREATE TABLE` 금지 — `dataset_meta` / `dataset_column` / `dataset_row(data_json)` 구조 유지
-- 엔티티와 API에 항상 `owner_id`, `org_id` 상정 (현재 mock: `user_admin`, `org_hq`)
+- 데이터셋은 항상 소유자(`owner_id`, 사번)와 선택적 프로젝트(`project_code`)를 가진다. 소유자는 요청 값이 아니라 로그인 사용자로 서버가 정한다. 수정·삭제 권한은 `DatasetAccessPolicy` 한 곳에서만 판정한다.
 - 1,000행 이상 대용량 적재는 비동기 처리
 - 스키마 변경은 엔티티 수정(`ddl-auto: update`)으로 처리한다 (프로토타입 한정 — 모듈 A 구현 시 마이그레이션 도구 도입 여부와 함께 재검토). 인덱스는 `@Table(indexes = ...)`로 선언한다.
 - 대량 insert/delete는 건별 처리 금지 — 벌크 쿼리(`@Modifying @Query`) 또는 `JdbcTemplate.batchUpdate` 사용.

@@ -5,6 +5,7 @@ import com.dgjs.backend.dto.SchemaPreviewDto;
 import com.dgjs.backend.repository.DatasetColumnRepository;
 import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.DatasetRowRepository;
+import com.dgjs.backend.repository.ProjectRepository;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
@@ -51,7 +52,10 @@ class DatasetServiceUploadTest {
             new RowDataValidator(),
             new UploadFileStorage(),
             transactionTemplate,
-            jdbcTemplate);
+            jdbcTemplate,
+            mock(ProjectRepository.class),
+            TestFixtures.accessPolicy(),
+            TestFixtures.assembler());
 
     private final AtomicReference<DatasetMeta> savedMeta = new AtomicReference<>();
 
@@ -107,7 +111,7 @@ class DatasetServiceUploadTest {
         Path file = xlsxWithRows(1200);
         taskService.initTask("t1");
 
-        service.processAsyncUpload("t1", file, "data.xlsx", request());
+        service.processAsyncUpload("t1", file, "data.xlsx", request(), "E0001");
 
         ArgumentCaptor<Integer> batchSizes = ArgumentCaptor.forClass(Integer.class);
         verify(jdbcTemplate, times(3)).batchUpdate(anyString(), any(java.util.Collection.class), batchSizes.capture(), any());
@@ -116,6 +120,7 @@ class DatasetServiceUploadTest {
         assertThat(taskService.getProgress("t1").getDatasetId()).isEqualTo(7L);
         assertThat(savedMeta.get().getStatus()).isEqualTo(DatasetMeta.STATUS_READY);
         assertThat(savedMeta.get().getLastLoadedAt()).isNotNull();
+        assertThat(savedMeta.get().getOwnerId()).isEqualTo("E0001");
         assertThat(file).doesNotExist();
     }
 
@@ -127,7 +132,7 @@ class DatasetServiceUploadTest {
         Path file = textFile(csv.toString());
         taskService.initTask("t1");
 
-        service.processAsyncUpload("t1", file, "data.csv", request());
+        service.processAsyncUpload("t1", file, "data.csv", request(), "E0001");
 
         ArgumentCaptor<Integer> batchSizes = ArgumentCaptor.forClass(Integer.class);
         verify(jdbcTemplate, times(3)).batchUpdate(anyString(), any(java.util.Collection.class), batchSizes.capture(), any());
@@ -146,7 +151,7 @@ class DatasetServiceUploadTest {
         Path file = textFile(csv.toString());
         taskService.initTask("t1");
 
-        service.processAsyncUpload("t1", file, "data.csv", request());
+        service.processAsyncUpload("t1", file, "data.csv", request(), "E0001");
 
         SchemaPreviewDto.TaskProgressResponse progress = taskService.getProgress("t1");
         assertThat(progress.getStatus()).isEqualTo("FAILED");
@@ -162,7 +167,7 @@ class DatasetServiceUploadTest {
         Path file = textFile("그냥 텍스트");
         taskService.initTask("t1");
 
-        service.processAsyncUpload("t1", file, "data.xlsx", request());
+        service.processAsyncUpload("t1", file, "data.xlsx", request(), "E0001");
 
         SchemaPreviewDto.TaskProgressResponse progress = taskService.getProgress("t1");
         assertThat(progress.getStatus()).isEqualTo("FAILED");
@@ -179,7 +184,7 @@ class DatasetServiceUploadTest {
         Path file = xlsxWithRows(600);
         taskService.initTask("t1");
 
-        service.processAsyncUpload("t1", file, "data.xlsx", request());
+        service.processAsyncUpload("t1", file, "data.xlsx", request(), "E0001");
 
         SchemaPreviewDto.TaskProgressResponse progress = taskService.getProgress("t1");
         assertThat(progress.getStatus()).isEqualTo("FAILED");

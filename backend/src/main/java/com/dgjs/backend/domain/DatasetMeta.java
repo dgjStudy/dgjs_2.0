@@ -27,11 +27,14 @@ public class DatasetMeta {
     @Column(length = 100)
     private String category;
 
+    // 소유자 사번임. 기존 값(user_admin) 때문에 외래키는 두지 않고 서비스가 사원 존재를 검사함
     @Column(name = "owner_id", length = 50)
     private String ownerId;
 
-    @Column(name = "org_id", length = 50)
-    private String orgId;
+    // 연결된 프로젝트임. NULL이면 미지정이며 프로젝트 참여자 권한이 적용되지 않음
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "project_code")
+    private Project project;
 
     // 컬럼 추가 전 기존 데이터는 NULL이며 READY를 의미함
     @Column(length = 20)

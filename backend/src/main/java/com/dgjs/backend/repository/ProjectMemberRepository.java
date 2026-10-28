@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 public interface ProjectMemberRepository extends JpaRepository<ProjectMember, Long> {
@@ -16,6 +17,9 @@ public interface ProjectMemberRepository extends JpaRepository<ProjectMember, Lo
     @Query("select m from ProjectMember m join fetch m.employee e join fetch e.department "
             + "where m.project.projectCode = :projectCode order by e.empNo")
     List<ProjectMember> findByProjectCode(@Param("projectCode") String projectCode);
+
+    @Query("select m.project.projectCode from ProjectMember m where m.employee.empNo = :empNo")
+    Set<String> findProjectCodesByEmpNo(@Param("empNo") String empNo);
 
     boolean existsByProject_ProjectCodeAndEmployee_EmpNo(String projectCode, String empNo);
 

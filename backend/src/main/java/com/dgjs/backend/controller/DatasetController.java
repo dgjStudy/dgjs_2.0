@@ -5,10 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dgjs.backend.dto.DatasetDto;
 import com.dgjs.backend.dto.SchemaPreviewDto;
 import com.dgjs.backend.service.DatasetService;
+import com.dgjs.backend.service.EmployeePrincipal;
 import com.dgjs.backend.service.UploadFileStorage;
 import com.dgjs.backend.service.UploadTaskService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,13 +31,15 @@ public class DatasetController {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @GetMapping("/datasets")
-    public ResponseEntity<List<DatasetDto.SummaryResponse>> getDatasets() {
-        return ResponseEntity.ok(datasetService.getAllDatasets());
+    public ResponseEntity<List<DatasetDto.SummaryResponse>> getDatasets(@AuthenticationPrincipal EmployeePrincipal user) {
+        return ResponseEntity.ok(datasetService.getAllDatasets(user));
     }
 
     @GetMapping("/datasets/{id}")
-    public ResponseEntity<DatasetDto.DetailResponse> getDatasetDetail(@PathVariable("id") Long id) {
-        return ResponseEntity.ok(datasetService.getDatasetDetail(id));
+    public ResponseEntity<DatasetDto.DetailResponse> getDatasetDetail(
+            @PathVariable("id") Long id,
+            @AuthenticationPrincipal EmployeePrincipal user) {
+        return ResponseEntity.ok(datasetService.getDatasetDetail(id, user));
     }
 
     @GetMapping("/datasets/{id}/rows")
@@ -54,9 +58,11 @@ public class DatasetController {
     @PostMapping("/upload-async")
     public ResponseEntity<Map<String, Object>> uploadDatasetAsync(
             @RequestPart("file") MultipartFile file,
-            @RequestPart("metadata") String metadataJson) throws IOException {
+            @RequestPart("metadata") String metadataJson,
+            @AuthenticationPrincipal EmployeePrincipal user) throws IOException {
         SchemaPreviewDto.FinalUploadRequest request = objectMapper.readValue(metadataJson, SchemaPreviewDto.FinalUploadRequest.class);
         datasetService.validateUploadRequest(request);
+        datasetService.checkProjectAttachable(user, request.getProjectCode());
         String taskId = UUID.randomUUID().toString();
 
         // HTTP 요청 스레드가 종료되면 Tomcat 임시 파일이 삭제되므로, 비동기 처리용 임시 파일로 옮겨 경로만 넘김 (처리 후 비동기 쪽에서 삭제)
@@ -66,7 +72,7 @@ public class DatasetController {
         try {
             // 비동기 스레드 시작 전에 첫 진행률 조회가 도착해도 작업이 존재해야 하므로 호출 전 등록임
             uploadTaskService.initTask(taskId);
-            datasetService.processAsyncUpload(taskId, uploadedFile, originalFilename, request);
+            datasetService.processAsyncUpload(taskId, uploadedFile, originalFilename, request, user.getEmpNo());
         } catch (RuntimeException e) {
             uploadFileStorage.delete(uploadedFile);
             throw e;
@@ -81,26 +87,36 @@ public class DatasetController {
     }
 
     @PostMapping("/datasets/manual")
-    public ResponseEntity<Map<String, Object>> createManualDataset(@RequestBody DatasetDto.ManualCreateRequest request) {
-        Long datasetId = datasetService.createManualDataset(request);
+    public ResponseEntity<Map<String, Object>> createManualDataset(
+            @RequestBody DatasetDto.ManualCreateRequest request,
+            @AuthenticationPrincipal EmployeePrincipal user) {
+        Long datasetId = datasetService.createManualDataset(request, user);
         return ResponseEntity.ok(Map.of("success", true, "datasetId", datasetId, "message", "데이터셋 스키마가 성공적으로 생성되었습니다."));
     }
 
     @PutMapping("/datasets/{id}")
-    public ResponseEntity<Map<String, Object>> updateDatasetMeta(@PathVariable("id") Long id, @RequestBody DatasetDto.MetaUpdateRequest request) {
-        datasetService.updateDatasetMeta(id, request);
+    public ResponseEntity<Map<String, Object>> updateDatasetMeta(
+            @PathVariable("id") Long id,
+            @RequestBody DatasetDto.MetaUpdateRequest request,
+            @AuthenticationPrincipal EmployeePrincipal user) {
+        datasetService.updateDatasetMeta(id, request, user);
         return ResponseEntity.ok(Map.of("success", true, "message", "데이터셋 정보가 수정되었습니다."));
     }
 
     @DeleteMapping("/datasets/{id}")
-    public ResponseEntity<Map<String, Object>> deleteDataset(@PathVariable("id") Long id) {
-        datasetService.deleteDataset(id);
+    public ResponseEntity<Map<String, Object>> deleteDataset(
+            @PathVariable("id") Long id,
+            @AuthenticationPrincipal EmployeePrincipal user) {
+        datasetService.deleteDataset(id, user);
         return ResponseEntity.ok(Map.of("success", true, "message", "데이터셋이 삭제되었습니다."));
     }
 
     @PostMapping("/datasets/{id}/rows")
-    public ResponseEntity<Map<String, Object>> addRow(@PathVariable("id") Long id, @RequestBody Map<String, Object> rowData) throws JsonProcessingException {
-        Long rowId = datasetService.addRow(id, rowData);
+    public ResponseEntity<Map<String, Object>> addRow(
+            @PathVariable("id") Long id,
+            @RequestBody Map<String, Object> rowData,
+            @AuthenticationPrincipal EmployeePrincipal user) throws JsonProcessingException {
+        Long rowId = datasetService.addRow(id, rowData, user);
         return ResponseEntity.ok(Map.of("success", true, "rowId", rowId, "message", "데이터 행이 성공적으로 추가되었습니다."));
     }
 
@@ -108,14 +124,18 @@ public class DatasetController {
     public ResponseEntity<Map<String, Object>> updateRow(
             @PathVariable("id") Long id,
             @PathVariable("rowId") Long rowId,
-            @RequestBody Map<String, Object> rowData) throws JsonProcessingException {
-        datasetService.updateRow(id, rowId, rowData);
+            @RequestBody Map<String, Object> rowData,
+            @AuthenticationPrincipal EmployeePrincipal user) throws JsonProcessingException {
+        datasetService.updateRow(id, rowId, rowData, user);
         return ResponseEntity.ok(Map.of("success", true, "message", "데이터 행이 수정되었습니다."));
     }
 
     @DeleteMapping("/datasets/{id}/rows/{rowId}")
-    public ResponseEntity<Map<String, Object>> deleteRow(@PathVariable("id") Long id, @PathVariable("rowId") Long rowId) {
-        datasetService.deleteRow(id, rowId);
+    public ResponseEntity<Map<String, Object>> deleteRow(
+            @PathVariable("id") Long id,
+            @PathVariable("rowId") Long rowId,
+            @AuthenticationPrincipal EmployeePrincipal user) {
+        datasetService.deleteRow(id, rowId, user);
         return ResponseEntity.ok(Map.of("success", true, "message", "데이터 행이 삭제되었습니다."));
     }
 }

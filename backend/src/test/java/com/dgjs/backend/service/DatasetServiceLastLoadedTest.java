@@ -7,6 +7,7 @@ import com.dgjs.backend.dto.DatasetDto;
 import com.dgjs.backend.repository.DatasetColumnRepository;
 import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.DatasetRowRepository;
+import com.dgjs.backend.repository.ProjectRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -35,7 +36,11 @@ class DatasetServiceLastLoadedTest {
             new RowDataValidator(),
             new UploadFileStorage(),
             mock(TransactionTemplate.class),
-            mock(JdbcTemplate.class));
+            mock(JdbcTemplate.class),
+            mock(ProjectRepository.class),
+            TestFixtures.accessPolicy(),
+            TestFixtures.assembler());
+    private final EmployeePrincipal admin = TestFixtures.principal("E0001", "ADMIN");
 
     private DatasetMeta meta(Long id, LocalDateTime createdAt, LocalDateTime lastLoadedAt) {
         return DatasetMeta.builder()
@@ -59,7 +64,7 @@ class DatasetServiceLastLoadedTest {
             return row;
         });
 
-        service.addRow(1L, Map.of("col_0", "값"));
+        service.addRow(1L, Map.of("col_0", "값"), admin);
 
         assertThat(meta.getLastLoadedAt()).isNotNull().isAfter(LocalDateTime.of(2026, 1, 1, 0, 0));
     }
@@ -72,7 +77,7 @@ class DatasetServiceLastLoadedTest {
                 meta(1L, created, null),
                 meta(2L, created, loaded)));
 
-        List<DatasetDto.SummaryResponse> result = service.getAllDatasets();
+        List<DatasetDto.SummaryResponse> result = service.getAllDatasets(admin);
 
         assertThat(result).extracting(DatasetDto.SummaryResponse::getLastLoadedAt).containsExactly(created, loaded);
     }

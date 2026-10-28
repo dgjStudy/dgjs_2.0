@@ -5,6 +5,7 @@ import com.dgjs.backend.domain.Employee;
 import com.dgjs.backend.domain.Project;
 import com.dgjs.backend.domain.ProjectMember;
 import com.dgjs.backend.dto.ProjectDto;
+import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.EmployeeRepository;
 import com.dgjs.backend.repository.ProjectMemberRepository;
 import com.dgjs.backend.repository.ProjectRepository;
@@ -27,8 +28,10 @@ class ProjectServiceTest {
     private final ProjectRepository projectRepository = mock(ProjectRepository.class);
     private final ProjectMemberRepository memberRepository = mock(ProjectMemberRepository.class);
     private final EmployeeRepository employeeRepository = mock(EmployeeRepository.class);
+    private final DatasetMetaRepository datasetMetaRepository = mock(DatasetMetaRepository.class);
     private final ProjectService service =
-            new ProjectService(projectRepository, memberRepository, employeeRepository, TestFixtures.directExecutor());
+            new ProjectService(projectRepository, memberRepository, employeeRepository, datasetMetaRepository,
+                    new DatasetAccessPolicy(memberRepository), TestFixtures.directExecutor());
 
     private final Project project = Project.builder().projectCode("P001").name("사업").build();
     private final Department dept = Department.builder().deptCode("D001").name("개발팀").build();
@@ -95,14 +98,27 @@ class ProjectServiceTest {
     }
 
     @Test
-    void 프로젝트를_삭제하면_참여자_연결을_먼저_지운다() {
+    void 프로젝트를_삭제하면_데이터셋_연결과_참여자_연결을_먼저_지운다() {
         when(projectRepository.findById("P001")).thenReturn(Optional.of(project));
 
         service.delete("P001");
 
-        var order = inOrder(memberRepository, projectRepository);
+        var order = inOrder(datasetMetaRepository, memberRepository, projectRepository);
+        order.verify(datasetMetaRepository).clearProject("P001");
         order.verify(memberRepository).deleteByProjectCode("P001");
         order.verify(projectRepository).delete(project);
+    }
+
+    @Test
+    void 연결할_프로젝트_목록은_관리자는_전체_일반_사용자는_참여한_것만_내려준다() {
+        when(projectRepository.findAllByOrderByProjectCodeAsc()).thenReturn(java.util.List.of(
+                project, Project.builder().projectCode("P002").name("다른 사업").build()));
+        when(memberRepository.findProjectCodesByEmpNo("E0002")).thenReturn(java.util.Set.of("P002"));
+
+        assertThat(service.getMine(TestFixtures.principal("E0001", "ADMIN")))
+                .extracting(ProjectDto.Response::getProjectCode).containsExactly("P001", "P002");
+        assertThat(service.getMine(TestFixtures.principal("E0002", "USER")))
+                .extracting(ProjectDto.Response::getProjectCode).containsExactly("P002");
     }
 
     @Test

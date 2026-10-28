@@ -1,5 +1,6 @@
 package com.dgjs.backend.config;
 
+import com.dgjs.backend.service.ForbiddenOperationException;
 import com.dgjs.backend.service.LoginFailedException;
 import com.dgjs.backend.service.LoginLockedException;
 import com.dgjs.backend.service.ResourceNotFoundException;
@@ -27,6 +28,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(ResourceNotFoundException e) {
         return body(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    @ExceptionHandler(ForbiddenOperationException.class)
+    public ResponseEntity<Map<String, String>> handleForbidden(ForbiddenOperationException e) {
+        return body(HttpStatus.FORBIDDEN, e.getMessage());
     }
 
     @ExceptionHandler(LoginFailedException.class)

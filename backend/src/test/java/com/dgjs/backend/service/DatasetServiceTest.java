@@ -4,6 +4,7 @@ import com.dgjs.backend.dto.SchemaPreviewDto;
 import com.dgjs.backend.repository.DatasetColumnRepository;
 import com.dgjs.backend.repository.DatasetMetaRepository;
 import com.dgjs.backend.repository.DatasetRowRepository;
+import com.dgjs.backend.repository.ProjectRepository;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,10 @@ class DatasetServiceTest {
             new RowDataValidator(),
             new UploadFileStorage(),
             Mockito.mock(TransactionTemplate.class),
-            Mockito.mock(JdbcTemplate.class));
+            Mockito.mock(JdbcTemplate.class),
+            Mockito.mock(ProjectRepository.class),
+            TestFixtures.accessPolicy(),
+            TestFixtures.assembler());
 
     private SchemaPreviewDto.Response previewCsv(byte[] bytes) throws IOException {
         return service.previewAndValidate(new MockMultipartFile("file", "data.csv", "text/csv", bytes));
