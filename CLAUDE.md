@@ -51,7 +51,7 @@
   - 별도 CSS/SCSS 파일 작성 금지.
   - 모든 UI는 antd 컴포넌트(Table, Form, Upload, Card, message 등) + 인라인 `style` prop으로만 해결.
   - 순수 HTML 태그보다 antd 컴포넌트 우선.
-- **Multi-tenancy**: 인증(A 모듈) 구현 전이라도 엔티티·API 파라미터에 항상 `owner_id`, `org_id`를 상정 (현재 mock: `user_admin`, `org_hq`).
+- **데이터셋 소유**: 데이터셋은 항상 소유자(`owner_id`, 사번)와 선택적 프로젝트(`project_code`)를 가진다. 소유자는 요청 값이 아니라 로그인 사용자(세션)로 서버가 정한다. 조직은 소유자의 부서로 대신하며 `org_id`는 쓰지 않는다.
 - **보안**: DB 비밀번호 등 시크릿은 절대 커밋하지 않는다 (`application-local.yml` 또는 환경변수 사용).
 - **gitignore**: git에 올라가면 안 되는 파일(시크릿, 로컬 설정, 빌드 산출물, 임시·로그 파일 등)을 새로 만들어야 하면, 만들 때 해당 경로를 `.gitignore`에 함께 반영하고 작업 보고에 알린다. 예제 파일(`*.example`)을 같이 만드는 것을 우선 검토한다.
 - **코딩 스타일**: 장황한 이론 설명보다 즉시 실행 가능한 코드 위주. 컴포넌트/API 단위로 모듈화.

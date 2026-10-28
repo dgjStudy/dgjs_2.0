@@ -18,7 +18,8 @@ dgjs_2.0/
 │       │   ├─ WebConfig          CORS 허용 (localhost:5173, 3000)
 │       │   ├─ OpenApiConfig      Swagger 문서 메타정보
 │       │   ├─ PasswordConfig     BCrypt PasswordEncoder 빈 (spring-security-crypto, 전체 Spring Security는 A-2에서 도입)
-│       │   ├─ AdminSeedRunner    서버 시작 시 사원이 없으면 초기 부서·관리자 생성 (app.seed.* 설정)
+│       │   ├─ AdminSeedRunner    서버 시작 시 사원이 없으면 초기 부서·관리자 생성 (app.seed.* 설정, 실행 순서 1)
+│       │   ├─ DatasetOwnerMigrationRunner  서버 시작 시 소유자를 알 수 없는 데이터셋의 소유자를 초기 관리자로 이관 (실행 순서 2)
 │       │   ├─ SecurityConfig     접근 규칙(공개/로그인/ADMIN), CSRF(쿠키 XSRF-TOKEN + 헤더 X-XSRF-TOKEN), 세션 기반 보안 필터 체인
 │       │   ├─ AuthenticationConfig  이메일·비밀번호 인증 공급자와 AuthenticationManager
 │       │   ├─ SessionUserRefreshFilter  요청마다 사원 상태·역할을 다시 읽어 반영하고 임시 비밀번호 상태는 변경 관련 요청만 허용
@@ -31,7 +32,10 @@ dgjs_2.0/
 │       │   ├─ EmployeeController    사원 API (/api/employees)
 │       │   └─ AuthController        로그인·로그아웃·내 정보·비밀번호 변경 (/api/auth)
 │       ├─ service/
-│       │   ├─ DatasetService     미리보기·검증, 비동기 적재, CSV 파싱, 데이터셋/행 CRUD
+│       │   ├─ DatasetService     미리보기·검증, 비동기 적재, CSV 파싱, 데이터셋/행 CRUD. 소유자는 로그인 사용자로 정하고 모든 수정 경로에 권한 검사를 적용
+│       │   ├─ DatasetAccessPolicy  데이터셋 수정·삭제·프로젝트 연결 권한을 판정하는 유일한 곳
+│       │   ├─ DatasetResponseAssembler  목록·상세 응답에 소유자 이름, 프로젝트, 수정·삭제 가능 여부를 채움
+│       │   ├─ DatasetOwnerMigrationService  소유자를 알 수 없는 데이터셋을 가장 앞선 활성 관리자에게 넘김
 │       │   ├─ SpreadsheetReader  엑셀 첫 시트를 행 단위로 읽는 진입점 (xlsx는 XlsxRowReader, xls·암호화 파일은 DOM)
 │       │   ├─ XlsxRowReader      xlsx 스트리밍(SAX) 읽기. 행 수와 무관하게 메모리 사용량이 일정
 │       │   ├─ UploadFileStorage  업로드 파일을 임시 파일로 저장·삭제 (byte[]로 힙에 들고 있지 않음)
@@ -49,6 +53,7 @@ dgjs_2.0/
 │       │   ├─ PasswordPolicy     비밀번호 정책(8~64자, 영문+숫자, 현재 비밀번호·이메일과 동일 불가)
 │       │   ├─ EmployeeUserDetailsService·EmployeePrincipal  인증용 사용자 조회와 세션에 저장되는 로그인 사용자 정보
 │       │   ├─ LoginFailedException(401)·LoginLockedException(429)  로그인 실패·잠금 예외
+│       │   ├─ ForbiddenOperationException  권한 없음(403) 예외
 │       │   └─ ResourceNotFoundException  대상 없음(404) 예외
 │       ├─ domain/                JPA 엔티티 (DatasetMeta, DatasetColumn, DatasetRow, Employee, Department, Project, ProjectMember)와 JobTitle·EmployeeRole·EmployeeStatus enum
 │       ├─ repository/            Spring Data JPA Repository
@@ -98,7 +103,7 @@ dgjs_2.0/
 
 | 테이블 | 의미 | 주요 컬럼 |
 |---|---|---|
-| `dataset_meta` | 데이터셋 1건 (엑셀 시트 1장) | dataset_id, name, description, category, owner_id, org_id, status(PROCESSING/READY/FAILED, NULL=READY), created_at, last_loaded_at(적재 완료·행 추가 시각, NULL이면 응답에서 등록일로 대체) |
+| `dataset_meta` | 데이터셋 1건 (엑셀 시트 1장) | dataset_id, name, description, category, owner_id(소유자 사번, DB 외래키 없음), project_code(프로젝트 외래키, NULL=미지정), status(PROCESSING/READY/FAILED, NULL=READY), created_at, last_loaded_at(적재 완료·행 추가 시각, NULL이면 응답에서 등록일로 대체). 예전 `org_id` 컬럼은 더 이상 쓰지 않으며 DB에 남아 있을 수 있음 |
 | `dataset_column` | 열 정의 (헤더 1칸) | dataset_id, column_key(`col_0..N`), column_name, data_type(STRING/NUMBER/DATE/BOOLEAN), sort_order. 인덱스 `(dataset_id)` |
 | `dataset_row` | 행 1줄 | dataset_id, row_index, data_json(`{"col_0": ..., "col_1": ...}`). 인덱스 `(dataset_id, row_index)` |
 
@@ -115,7 +120,7 @@ dgjs_2.0/
 - 사원은 삭제하지 않고 status로 비활성 처리한다(소유 데이터셋이 고아가 되지 않게 함). 소속 사원이 있는 부서는 삭제할 수 없고, 프로젝트를 삭제하면 참여자 연결도 함께 지운다.
 - 코드는 최댓값 + 1로 부여하며, 동시 요청으로 키가 충돌하면 새 트랜잭션에서 최대 3회 다시 시도한다.
 - 마지막 활성 관리자의 역할·상태는 바꿀 수 없다.
-- 접근 검사는 `SecurityConfig`가 한다(아래 "인증·권한" 참고). 데이터셋 소유자·프로젝트 참여자에 따른 수정 권한은 A-3에서 추가한다.
+- 접근 검사는 `SecurityConfig`가 한다(아래 "인증·권한" 참고). 데이터셋 소유자·프로젝트 참여자에 따른 수정 권한은 `DatasetAccessPolicy`가 판정한다(아래 "데이터셋 소유·권한" 참고).
 
 ## API
 
@@ -140,6 +145,7 @@ dgjs_2.0/
 | GET / POST | /api/departments | 부서 전체 목록(소속 사원 수 포함) / 생성 |
 | PUT / DELETE | /api/departments/{deptCode} | 부서명 수정 / 삭제(소속 사원이 있으면 400) |
 | GET / POST | /api/projects | 프로젝트 전체 목록(참여자 수 포함) / 생성 |
+| GET | /api/projects/mine | 내가 데이터셋을 연결할 수 있는 프로젝트(ADMIN은 전체, 그 밖에는 참여 중인 프로젝트). 로그인한 모두 |
 | PUT / DELETE | /api/projects/{projectCode} | 프로젝트명 수정 / 삭제 |
 | GET / POST | /api/projects/{projectCode}/members | 참여자 목록 / 추가(`{ "empNo": "E0002" }`) |
 | DELETE | /api/projects/{projectCode}/members/{empNo} | 참여자 제거 |
@@ -158,7 +164,10 @@ dgjs_2.0/
 | 상태 | 대상 |
 |---|---|
 | 400 | `IllegalArgumentException`(검증 실패), JSON 형식 오류, 필수 요청 값·파트 누락, 파일 크기 초과, 요청 값 형식 오류 |
+| 401 | 로그인 필요, 로그인 실패 |
+| 403 | 권한 없음(`ForbiddenOperationException`: 데이터셋 수정·삭제·프로젝트 연결, 관리자 전용 API, CSRF 누락, 임시 비밀번호 상태) |
 | 404 | `ResourceNotFoundException`(데이터셋·행 없음), 존재하지 않는 경로 |
+| 429 | 로그인 연속 실패로 잠김 |
 | 405 | 지원하지 않는 HTTP 메서드 |
 | 500 | 그 밖의 예외. 상세는 서버 로그에만 남기고 일반 문구로 응답 |
 
@@ -210,6 +219,23 @@ dgjs_2.0/
 | POST | /api/auth/logout | 세션 삭제 |
 | GET | /api/auth/me | 현재 사용자 정보 (비로그인이면 401) |
 | POST | /api/auth/change-password | `{ currentPassword, newPassword }` → 변경 후 사용자 정보 |
+
+### 데이터셋 소유·권한 (모듈 A-3a)
+
+| 동작 | 가능한 사람 |
+|---|---|
+| 조회(목록·상세·행) | 로그인한 모두 |
+| 등록(엑셀·CSV 적재, 수동 생성) | 로그인한 모두. 소유자는 요청 값이 아니라 로그인 사용자 |
+| 메타 수정, 행 추가·수정·삭제 | ADMIN, 소유자, 그 데이터셋 프로젝트의 참여자 |
+| 데이터셋 삭제 | ADMIN, 소유자 |
+| 프로젝트 연결 변경(연결·이동·해제) | ADMIN, 소유자. 연결할 새 프로젝트의 참여자(또는 ADMIN)여야 함 |
+| 프로젝트 미지정 데이터셋의 수정 | ADMIN, 소유자 |
+
+- 판정은 `DatasetAccessPolicy` 한 곳에서만 한다. 거부는 403이다(조회가 전사 공개라 존재를 숨기지 않음).
+- 등록·메타 수정은 `projectCode`를 받는다. 등록에서 비우면 미지정이고, 메타 수정에서는 null이면 변경 없음, 빈 문자열이면 미지정으로 바꾼다. 요청의 `ownerId`·`orgId`는 받지 않는다(업로드 요청은 알 수 없는 필드를 무시).
+- 목록·상세 응답에는 `ownerId`(사번), `ownerName`, `projectCode`, `projectName`, `canEdit`, `canDelete`가 있다(화면 버튼 표시용이며 실제 검사는 서버가 다시 한다). 목록은 소유자·프로젝트를 한 번에 조회하고 참여 프로젝트는 요청당 한 번만 조회한다.
+- 프로젝트를 삭제하면 연결된 데이터셋은 먼저 미지정으로 바뀐다.
+- 서버 시작 때 `DatasetOwnerMigrationRunner`가 소유자가 비었거나 사원에 없는(예: 예전 `user_admin`) 데이터셋을 가장 앞선 활성 관리자에게 넘긴다. 여러 번 실행해도 결과가 같다.
 
 ### 초기 관리자 시드
 서버 시작 시 `AdminSeedRunner`가 `employee`가 비어 있을 때만 초기 부서(기본 "시스템관리")와 관리자(기본 `admin@dgjs.local`)를 만든다. 값은 `app.seed.*` 설정(`application-local.yml.example` 참고)으로 바꾸며, 비밀번호를 비워 두면 임의로 만들어 서버 로그에 한 번만 출력하고 첫 로그인 때 변경하도록 표시한다.
