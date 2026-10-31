@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Button, Card, Tag, Space, Input, message, Popconfirm } from 'antd';
+import { Table, Button, Card, Tag, Space, Input, Typography, message, Popconfirm } from 'antd';
 import { FileExcelOutlined, EyeOutlined, PlusOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
 import { fetchDatasets, deleteDataset } from '../api/datasetApi';
 import { DEFAULT_CATEGORY } from '../constants/category';
 import { formatDateTime, toTimestamp } from '../utils/formatDate';
 import PageTitle from '../components/PageTitle';
+
+const { Text } = Typography;
 
 const SEARCH_STYLE = { maxWidth: 360 };
 
@@ -60,6 +62,12 @@ const DatasetListPage = () => {
       ),
     },
     {
+      title: '프로젝트',
+      dataIndex: 'projectName',
+      key: 'projectName',
+      render: (name) => (name ? <Tag color="geekblue">{name}</Tag> : <Text type="secondary">미지정</Text>),
+    },
+    {
       title: '분류',
       dataIndex: 'category',
       key: 'category',
@@ -71,6 +79,12 @@ const DatasetListPage = () => {
       key: 'rowCount',
       sorter: (a, b) => (a.rowCount || 0) - (b.rowCount || 0),
       render: (val) => `${(val || 0).toLocaleString()} 행`,
+    },
+    {
+      title: '소유자',
+      dataIndex: 'ownerName',
+      key: 'ownerName',
+      render: (name) => name || '-',
     },
     {
       title: '등록일',
@@ -88,11 +102,6 @@ const DatasetListPage = () => {
       render: formatDateTime,
     },
     {
-      title: '소속 / 소유자',
-      key: 'owner',
-      render: (_, record) => `${record.orgId || '-'} / ${record.ownerId || '-'}`,
-    },
-    {
       title: '작업',
       key: 'action',
       render: (_, record) => (
@@ -106,17 +115,19 @@ const DatasetListPage = () => {
           >
             상세 조회
           </Button>
-          <Popconfirm
-            title="데이터셋 삭제"
-            description="이 데이터셋과 적재된 데이터를 삭제하시겠습니까?"
-            onConfirm={() => handleDelete(record.id)}
-            okText="삭제"
-            cancelText="취소"
-          >
-            <Button type="text" danger size="small" icon={<DeleteOutlined />}>
-              삭제
-            </Button>
-          </Popconfirm>
+          {record.canDelete && (
+            <Popconfirm
+              title="데이터셋 삭제"
+              description="이 데이터셋과 적재된 데이터를 삭제하시겠습니까?"
+              onConfirm={() => handleDelete(record.id)}
+              okText="삭제"
+              cancelText="취소"
+            >
+              <Button type="text" danger size="small" icon={<DeleteOutlined />}>
+                삭제
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },

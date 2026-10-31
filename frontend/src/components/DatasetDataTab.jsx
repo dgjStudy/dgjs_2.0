@@ -12,7 +12,7 @@ import RowFormModal from './RowFormModal';
 
 const { Text } = Typography;
 
-const DatasetDataTab = ({ datasetId, columns, onTotalRowsChange, onRowAdded }) => {
+const DatasetDataTab = ({ datasetId, columns, canEdit, onTotalRowsChange, onRowAdded }) => {
   const [selectedColumnKeys, setSelectedColumnKeys] = useState(() => columns.map((c) => c.key));
 
   const [tableRows, setTableRows] = useState([]);
@@ -116,6 +116,37 @@ const DatasetDataTab = ({ datasetId, columns, onTotalRowsChange, onRowAdded }) =
     }
   };
 
+  const actionColumn = {
+    title: '작업',
+    key: 'action',
+    fixed: 'right',
+    width: 130,
+    render: (_, record) => (
+      <Space size="small">
+        <Button
+          type="link"
+          size="small"
+          icon={<EditOutlined />}
+          onClick={() => openEditRowModal(record)}
+          style={{ padding: 0 }}
+        >
+          수정
+        </Button>
+        <Popconfirm
+          title="데이터 행 삭제"
+          description="이 데이터 행을 삭제하시겠습니까?"
+          onConfirm={() => handleDeleteRow(record.key)}
+          okText="삭제"
+          cancelText="취소"
+        >
+          <Button type="link" danger size="small" icon={<DeleteOutlined />} style={{ padding: 0 }}>
+            삭제
+          </Button>
+        </Popconfirm>
+      </Space>
+    ),
+  };
+
   const gridColumns = [
     ...columns
       .filter((col) => selectedColumnKeys.includes(col.key))
@@ -133,36 +164,7 @@ const DatasetDataTab = ({ datasetId, columns, onTotalRowsChange, onRowAdded }) =
         ellipsis: true,
         width: 160,
       })),
-    {
-      title: '작업',
-      key: 'action',
-      fixed: 'right',
-      width: 130,
-      render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => openEditRowModal(record)}
-            style={{ padding: 0 }}
-          >
-            수정
-          </Button>
-          <Popconfirm
-            title="데이터 행 삭제"
-            description="이 데이터 행을 삭제하시겠습니까?"
-            onConfirm={() => handleDeleteRow(record.key)}
-            okText="삭제"
-            cancelText="취소"
-          >
-            <Button type="link" danger size="small" icon={<DeleteOutlined />} style={{ padding: 0 }}>
-              삭제
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
+    ...(canEdit ? [actionColumn] : []),
   ];
 
   return (
@@ -170,9 +172,11 @@ const DatasetDataTab = ({ datasetId, columns, onTotalRowsChange, onRowAdded }) =
       <Flex justify="space-between" align="center" wrap gap={8}>
         <Tag color="cyan">{selectedColumnKeys.length} / {columns.length} 컬럼 표시 중</Tag>
         <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openAddRowModal}>
-            데이터 행 추가
-          </Button>
+          {canEdit && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={openAddRowModal}>
+              데이터 행 추가
+            </Button>
+          )}
           <Popover
             content={
               <ColumnSettingsContent

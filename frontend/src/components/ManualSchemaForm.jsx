@@ -2,20 +2,17 @@ import { Button, Card, Form, Input, message, Select, Space, Spin, Tag, Typograph
 import { CheckCircleOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { DEFAULT_CATEGORY } from '../constants/category';
 import { DATA_TYPE_OPTIONS, DEFAULT_DATA_TYPE } from '../constants/dataType';
-import { MOCK_OWNER_ID, MOCK_ORG_ID } from '../constants/mockUser';
 import DatasetMetaFields from './DatasetMetaFields';
 
 const { Text } = Typography;
 
-const ManualSchemaForm = ({ form, loading, onSubmit }) => (
+const ManualSchemaForm = ({ form, loading, onSubmit, projectOptions }) => (
   <Spin spinning={loading}>
     <Form
       form={form}
       layout="vertical"
       initialValues={{
         category: DEFAULT_CATEGORY,
-        ownerId: MOCK_OWNER_ID,
-        orgId: MOCK_ORG_ID,
         columns: [
           { columnName: '', dataType: DEFAULT_DATA_TYPE },
         ],
@@ -26,6 +23,7 @@ const ManualSchemaForm = ({ form, loading, onSubmit }) => (
           namePlaceholder="예: 2026년 공장 설비 가동 이력 데이터셋"
           nameRequiredMessage="데이터셋 이름을 입력해주세요."
           descriptionPlaceholder="데이터셋의 용도 및 설명"
+          projectOptions={projectOptions}
         />
       </Card>
 

@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Card, Space, Form, Typography, Breadcrumb, Tabs, message, Spin } from 'antd';
 import { EditOutlined } from '@ant-design/icons';
 import { fetchDatasetDetail, updateDatasetMeta } from '../api/datasetApi';
+import { fetchMyProjects } from '../api/projectApi';
+import { toProjectOptions, withCurrentProject } from '../utils/projectOptions';
 import PageTitle from '../components/PageTitle';
 import MetaEditModal from '../components/MetaEditModal';
 import DatasetDataTab from '../components/DatasetDataTab';
@@ -16,6 +18,7 @@ const DatasetDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [totalRows, setTotalRows] = useState(0);
   const [metaModalOpen, setMetaModalOpen] = useState(false);
+  const [projectOptions, setProjectOptions] = useState([]);
   const [metaForm] = Form.useForm();
 
   const loadDetail = async () => {
@@ -60,11 +63,19 @@ const DatasetDetailPage = () => {
     );
   }
 
-  const openMetaModal = () => {
+  const openMetaModal = async () => {
+    try {
+      const projects = await fetchMyProjects();
+      setProjectOptions(withCurrentProject(toProjectOptions(projects), detail.projectCode, detail.projectName));
+    } catch (err) {
+      message.error(err.message || '프로젝트 목록을 불러오지 못했습니다.');
+      setProjectOptions(withCurrentProject([], detail.projectCode, detail.projectName));
+    }
     metaForm.setFieldsValue({
       name: detail.name,
       description: detail.description,
       category: detail.category,
+      projectCode: detail.projectCode || undefined,
     });
     setMetaModalOpen(true);
   };
@@ -72,10 +83,11 @@ const DatasetDetailPage = () => {
   const handleSaveMeta = async () => {
     try {
       const values = await metaForm.validateFields();
-      await updateDatasetMeta(id, values);
+      // 비운 선택은 빈 문자열로 보내 미지정으로 바꾸고, 보내지 않으면 서버가 연결을 그대로 둠
+      await updateDatasetMeta(id, { ...values, projectCode: values.projectCode ?? '' });
       message.success('메타데이터가 성공적으로 수정되었습니다.');
-      setDetail((prev) => ({ ...prev, ...values }));
       setMetaModalOpen(false);
+      await refreshDetail();
     } catch (err) {
       message.error(err.message || '메타데이터 수정 실패');
     }
@@ -96,9 +108,11 @@ const DatasetDetailPage = () => {
         title={detail.name}
         description={detail.description || '등록된 설명이 없습니다.'}
         extra={
-          <Button icon={<EditOutlined />} onClick={openMetaModal}>
-            메타데이터 수정
-          </Button>
+          detail.canEdit && (
+            <Button icon={<EditOutlined />} onClick={openMetaModal}>
+              메타데이터 수정
+            </Button>
+          )
         }
       />
 
@@ -112,6 +126,7 @@ const DatasetDetailPage = () => {
                 <DatasetDataTab
                   datasetId={id}
                   columns={allColumns}
+                  canEdit={detail.canEdit}
                   onTotalRowsChange={setTotalRows}
                   onRowAdded={refreshDetail}
                 />
@@ -128,6 +143,8 @@ const DatasetDetailPage = () => {
         form={metaForm}
         onOk={handleSaveMeta}
         onCancel={() => setMetaModalOpen(false)}
+        projectOptions={projectOptions}
+        projectDisabled={!detail.canDelete}
       />
     </Space>
   );

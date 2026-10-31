@@ -8,13 +8,14 @@ import {
   fetchTaskProgress,
   createManualDataset,
 } from '../api/datasetApi';
+import { fetchMyProjects } from '../api/projectApi';
 import PageTitle from '../components/PageTitle';
 import ManualSchemaForm from '../components/ManualSchemaForm';
 import SchemaReviewStep from '../components/SchemaReviewStep';
 import UploadFileStep from '../components/UploadFileStep';
 import UploadProgressStep from '../components/UploadProgressStep';
 import { DEFAULT_CATEGORY } from '../constants/category';
-import { MOCK_OWNER_ID, MOCK_ORG_ID } from '../constants/mockUser';
+import { toProjectOptions } from '../utils/projectOptions';
 
 const UploadPage = () => {
   const navigate = useNavigate();
@@ -27,12 +28,19 @@ const UploadPage = () => {
   const [previewData, setPreviewData] = useState(null);
   const [columnsSchema, setColumnsSchema] = useState([]);
   const [manualLoading, setManualLoading] = useState(false);
+  const [projectOptions, setProjectOptions] = useState([]);
 
   // Async task states
   const [uploadTaskId, setUploadTaskId] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatusMsg, setUploadStatusMsg] = useState('적재 준비 중...');
   const [taskStatus, setTaskStatus] = useState('IDLE'); // IDLE, PROCESSING, COMPLETED, FAILED
+
+  useEffect(() => {
+    fetchMyProjects()
+      .then((projects) => setProjectOptions(toProjectOptions(projects)))
+      .catch((err) => message.error(err.message || '프로젝트 목록을 불러오지 못했습니다.'));
+  }, []);
 
   // File Upload -> Preview API Call
   const handleFileChange = async ({ fileList }) => {
@@ -118,8 +126,7 @@ const UploadPage = () => {
         name: values.name,
         description: values.description || '',
         category: values.category || DEFAULT_CATEGORY,
-        ownerId: values.ownerId || MOCK_OWNER_ID,
-        orgId: values.orgId || MOCK_ORG_ID,
+        projectCode: values.projectCode || '',
         columns: columnsSchema.map((col) => ({ ...col, columnName: col.columnName.trim() })),
       };
 
@@ -208,7 +215,12 @@ const UploadPage = () => {
         />
 
         {activeTab === 'manual' ? (
-          <ManualSchemaForm form={manualForm} loading={manualLoading} onSubmit={handleManualCreate} />
+          <ManualSchemaForm
+            form={manualForm}
+            loading={manualLoading}
+            onSubmit={handleManualCreate}
+            projectOptions={projectOptions}
+          />
         ) : (
           <div>
             <Steps
@@ -227,6 +239,7 @@ const UploadPage = () => {
                 parsing={parsing}
                 fileList={fileList}
                 onChange={handleFileChange}
+                projectOptions={projectOptions}
               />
             )}
 
@@ -242,6 +255,7 @@ const UploadPage = () => {
                 onDataTypeChange={handleDataTypeChange}
                 onStart={handleStartAsyncUpload}
                 onBack={() => setCurrentStep(0)}
+                projectOptions={projectOptions}
               />
             )}
 

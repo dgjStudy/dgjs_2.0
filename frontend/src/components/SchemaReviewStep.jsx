@@ -2,7 +2,6 @@ import { Alert, Button, Card, Divider, Form, Input, Select, Space, Table, Typogr
 import { CheckCircleOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons';
 import { CATEGORY_OPTIONS } from '../constants/category';
 import { DATA_TYPE_OPTIONS } from '../constants/dataType';
-import { MOCK_OWNER_ID, MOCK_ORG_ID } from '../constants/mockUser';
 import DatasetMetaFields from './DatasetMetaFields';
 
 const { Text } = Typography;
@@ -18,6 +17,7 @@ const SchemaReviewStep = ({
   onDataTypeChange,
   onStart,
   onBack,
+  projectOptions,
 }) => {
   const schemaColumns = [
     {
@@ -126,12 +126,13 @@ const SchemaReviewStep = ({
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ category: CATEGORY_OPTIONS[0].value, ownerId: MOCK_OWNER_ID, orgId: MOCK_ORG_ID }}
+          initialValues={{ category: CATEGORY_OPTIONS[0].value }}
         >
           <DatasetMetaFields
             namePlaceholder="예: 2026년 3분기 공장별 에너지 사용량"
             nameRequiredMessage="데이터셋 이름을 입력해주세요."
             descriptionPlaceholder="데이터셋의 목적 및 수집 경로 설명"
+            projectOptions={projectOptions}
           />
         </Form>
 
