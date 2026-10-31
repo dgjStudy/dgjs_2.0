@@ -76,24 +76,26 @@ dgjs_2.0/
         │   ├─ PageTitle.jsx            페이지 제목·설명·우측 액션 영역 (화면 공통)
         │   ├─ DatasetDataTab.jsx       상세 "데이터" 탭: 서버 페이징 그리드, 컬럼 표시 토글, 행 추가·수정·삭제 모달과 상태
         │   ├─ DatasetSchemaTab.jsx     상세 "스키마" 탭: 컬럼 순번·이름·키·타입 목록
-        │   ├─ DatasetInfoTab.jsx       상세 "정보" 탭: ID, 분류, 행·열 수, 등록일, 최근 적재일, 소속·소유자
+        │   ├─ DatasetInfoTab.jsx       상세 "정보" 탭: ID, 분류, 행·열 수, 등록일, 최근 적재일, 소유자(이름), 프로젝트
         │   ├─ ColumnSettingsContent.jsx  컬럼 표시 설정 팝오버 내용
-        │   ├─ MetaEditModal.jsx        데이터셋 메타 수정 모달
+        │   ├─ MetaEditModal.jsx        데이터셋 메타 수정 모달 (프로젝트 선택 포함, 연결 변경은 소유자·관리자만 활성)
         │   ├─ RowFormModal.jsx         행 추가·수정 공용 모달
-        │   ├─ DatasetMetaFields.jsx    데이터셋 이름·설명·카테고리·조직·등록자 입력 필드 (업로드 화면 공용)
+        │   ├─ DatasetMetaFields.jsx    데이터셋 이름·설명·카테고리·프로젝트 선택 입력 필드 (업로드 화면 공용)
         │   ├─ UploadFileStep.jsx       적재 1단계: 메타 입력 + 파일 첨부
         │   ├─ SchemaReviewStep.jsx     적재 2단계: 검증 안내, 컬럼명·타입 수정, 샘플 미리보기
         │   ├─ UploadProgressStep.jsx   적재 3단계: 진행률 표시
         │   └─ ManualSchemaForm.jsx     수동 스키마 설계 폼
         ├─ pages/
-        │   ├─ DatasetListPage.jsx      /, /data      데이터셋 목록·삭제
+        │   ├─ DatasetListPage.jsx      /, /data      데이터셋 목록(프로젝트·소유자 열)·삭제(삭제 가능한 경우에만 버튼 표시)
         │   ├─ DatasetDetailPage.jsx    /data/:id     제목·메타 수정 버튼 + 탭 3개(데이터 / 스키마 / 정보). 상세 로딩과 메타 수정만 보유하고 탭 내용은 Dataset*Tab에 위임. 행 추가 시 상세를 다시 받아 최근 적재일을 갱신
         │   └─ UploadPage.jsx           /upload       ① 엑셀/CSV 3단계 적재(상태·폴링은 이 페이지가 보유)  ② 수동 스키마 설계
         ├─ utils/formatDate.js    날짜 표시 형식(YYYY-MM-DD HH:mm)과 정렬용 타임스탬프 변환
-        ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), 임시 소유자·조직(mockUser.js: 업로드 폼용 MOCK_OWNER_ID, MOCK_ORG_ID, A-3에서 제거 예정)
+        ├─ utils/projectOptions.js  프로젝트 선택지 변환, 현재 연결된 프로젝트가 선택지에 없을 때 끼워 넣기
+        ├─ constants/             카테고리(category.js), 컬럼 타입(dataType.js), (임시 소유자 상수는 A-3b에서 제거됨)
         └─ api/
             ├─ apiClient.js       공통 요청(apiFetch): 세션 쿠키 전달, 변경 요청에 CSRF 헤더 첨부, 401 시 등록된 처리 함수 호출. 상대경로 /api이며 개발 서버는 vite.config.js의 server.proxy가 localhost:8080으로 전달
             ├─ authApi.js         로그인·로그아웃·내 정보·비밀번호 변경
+            ├─ projectApi.js      내가 연결할 수 있는 프로젝트 목록(GET /api/projects/mine)
             └─ datasetApi.js      데이터셋·적재 호출
 ```
 
