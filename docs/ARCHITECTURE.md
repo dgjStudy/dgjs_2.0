@@ -70,11 +70,13 @@ dgjs_2.0/
         ├─ theme/theme.js         antd 테마 토큰. getThemeConfig('light' | 'dark') (다크 전환 기능은 후속)
         ├─ components/
         │   ├─ MainLayout.jsx           공통 레이아웃 (상단 바 + 본문). 메뉴 버튼으로 사이드바를 오버레이(Drawer)로 연다
-        │   ├─ SideMenu.jsx             사이드바 메뉴 항목 ("데이터셋" + ADMIN에게만 보이는 "관리" 그룹: 현재 부서·프로젝트)
+        │   ├─ SideMenu.jsx             사이드바 메뉴 항목 ("데이터셋" + ADMIN에게만 보이는 "관리" 그룹: 부서·프로젝트·사원)
         │   ├─ UserMenu.jsx             상단 바 우측 사용자 영역 (실제 로그인 사용자, 내 정보·로그아웃)
         │   ├─ RequireAuth.jsx          비로그인이면 /login으로(원래 화면 기억), 임시 비밀번호 상태면 /me로 이동시키는 라우트 가드
         │   ├─ RequireAdmin.jsx         ADMIN이 아니면 접근 불가 화면(403)을 보여 주는 라우트 가드
         │   ├─ ProjectMembersModal.jsx  프로젝트 참여자 관리 모달 (목록, 활성 사원 검색 후 추가, 제거)
+        │   ├─ EmployeeFormModal.jsx    사원 계정 발급·수정 모달
+        │   ├─ TempPasswordModal.jsx    임시 비밀번호를 한 번만 보여 주고 복사하는 모달 (발급·초기화 직후)
         │   ├─ PageTitle.jsx            페이지 제목·설명·우측 액션 영역 (화면 공통)
         │   ├─ DatasetDataTab.jsx       상세 "데이터" 탭: 서버 페이징 그리드, 컬럼 표시 토글, 행 추가·수정·삭제 모달과 상태
         │   ├─ DatasetSchemaTab.jsx     상세 "스키마" 탭: 컬럼 순번·이름·키·타입 목록
