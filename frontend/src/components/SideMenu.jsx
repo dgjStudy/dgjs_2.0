@@ -1,6 +1,6 @@
 import { Menu } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ApartmentOutlined, TableOutlined } from '@ant-design/icons';
+import { ApartmentOutlined, ProjectOutlined, TableOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/useAuth';
 
 const DATA_ITEMS = [
@@ -14,6 +14,7 @@ const ADMIN_ITEMS = [
     label: '관리',
     children: [
       { key: '/admin/departments', icon: <ApartmentOutlined />, label: '부서' },
+      { key: '/admin/projects', icon: <ProjectOutlined />, label: '프로젝트' },
     ],
   },
 ];
