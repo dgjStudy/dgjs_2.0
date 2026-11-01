@@ -2,7 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { ConfigProvider } from 'antd';
 import AuthProvider from './auth/AuthProvider';
 import MainLayout from './components/MainLayout';
+import RequireAdmin from './components/RequireAdmin';
 import RequireAuth from './components/RequireAuth';
+import AdminDepartmentPage from './pages/AdminDepartmentPage';
 import DatasetListPage from './pages/DatasetListPage';
 import DatasetDetailPage from './pages/DatasetDetailPage';
 import LoginPage from './pages/LoginPage';
@@ -31,6 +33,9 @@ export default function App() {
               <Route path="/data/:id" element={<DatasetDetailPage />} />
               <Route path="/upload" element={<UploadPage />} />
               <Route path="/me" element={<MyPage />} />
+              <Route element={<RequireAdmin />}>
+                <Route path="/admin/departments" element={<AdminDepartmentPage />} />
+              </Route>
             </Route>
           </Routes>
         </AuthProvider>
