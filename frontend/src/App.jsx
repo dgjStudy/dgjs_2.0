@@ -5,6 +5,7 @@ import MainLayout from './components/MainLayout';
 import RequireAdmin from './components/RequireAdmin';
 import RequireAuth from './components/RequireAuth';
 import AdminDepartmentPage from './pages/AdminDepartmentPage';
+import AdminEmployeePage from './pages/AdminEmployeePage';
 import AdminProjectPage from './pages/AdminProjectPage';
 import DatasetListPage from './pages/DatasetListPage';
 import DatasetDetailPage from './pages/DatasetDetailPage';
@@ -37,6 +38,7 @@ export default function App() {
               <Route element={<RequireAdmin />}>
                 <Route path="/admin/departments" element={<AdminDepartmentPage />} />
                 <Route path="/admin/projects" element={<AdminProjectPage />} />
+                <Route path="/admin/employees" element={<AdminEmployeePage />} />
               </Route>
             </Route>
           </Routes>
