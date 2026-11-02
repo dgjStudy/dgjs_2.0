@@ -48,9 +48,14 @@ const ProjectMembersModal = ({ project, onClose, onChanged }) => {
         const result = await searchEmployees({ keyword: keyword.trim(), size: 20 });
         const memberNos = new Set(members.map((m) => m.empNo));
         setOptions(
-          result.employees
-            .filter((e) => e.status === 'ACTIVE' && !memberNos.has(e.empNo))
-            .map((e) => ({ value: e.empNo, label: `${e.name} (${e.empNo}, ${e.deptName})` })),
+          result.employees.map((e) => {
+            const note = memberNos.has(e.empNo) ? ' - 참여 중' : e.status !== 'ACTIVE' ? ' - 비활성' : '';
+            return {
+              value: e.empNo,
+              label: `${e.name} (${e.empNo}, ${e.deptName})${note}`,
+              disabled: note !== '',
+            };
+          }),
         );
       } catch (err) {
         message.error(err.message);
