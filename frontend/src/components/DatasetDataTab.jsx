@@ -12,6 +12,8 @@ import RowFormModal from './RowFormModal';
 
 const { Text } = Typography;
 
+const CELL_STYLE = { whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflowY: 'auto' };
+
 const DatasetDataTab = ({ datasetId, columns, canEdit, onTotalRowsChange, onRowAdded }) => {
   const [selectedColumnKeys, setSelectedColumnKeys] = useState(() => columns.map((c) => c.key));
 
@@ -161,8 +163,10 @@ const DatasetDataTab = ({ datasetId, columns, canEdit, onTotalRowsChange, onRowA
         ),
         dataIndex: col.key,
         key: col.key,
-        ellipsis: true,
         width: 160,
+        render: (value) => (
+          <div style={CELL_STYLE}>{value === null || value === undefined ? '' : String(value)}</div>
+        ),
       })),
     ...(canEdit ? [actionColumn] : []),
   ];

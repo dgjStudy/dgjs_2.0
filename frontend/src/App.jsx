@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import { ConfigProvider } from 'antd';
+import { ConfigProvider, message } from 'antd';
 import AuthProvider from './auth/AuthProvider';
 import MainLayout from './components/MainLayout';
 import RequireAdmin from './components/RequireAdmin';
@@ -13,6 +13,9 @@ import LoginPage from './pages/LoginPage';
 import MyPage from './pages/MyPage';
 import UploadPage from './pages/UploadPage';
 import { getThemeConfig } from './theme/theme';
+
+// 오류가 반복돼도 알림이 화면을 덮지 않도록 동시 표시 개수를 제한함
+message.config({ maxCount: 3 });
 
 export default function App() {
   return (
