@@ -3,3 +3,8 @@ notes/
 
 # 개발 서버 실행 로그 (dev.ps1)
 .dev-logs/
+
+# 프로젝트 소개용 PDF와 캡처 (git에 올리지 않음)
+docs/DGJS2_overview.pdf
+docs/images/
+docs/DGJS2_interview_qna.pdf

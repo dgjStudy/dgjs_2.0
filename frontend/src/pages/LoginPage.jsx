@@ -15,9 +15,11 @@ const LoginPage = () => {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
 
-  const from = location.state?.from?.pathname || '/data';
+  const requested = location.state?.from?.pathname || '/data';
 
   if (!loading && user) {
+    // 관리자 화면에서 로그아웃한 뒤 일반 사원이 로그인하면 403 화면 대신 메인으로 보냄
+    const from = requested.startsWith('/admin') && user.role !== 'ADMIN' ? '/data' : requested;
     return <Navigate to={from} replace />;
   }
 
