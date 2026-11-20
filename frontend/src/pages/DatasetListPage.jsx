@@ -1,21 +1,29 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Button, Card, Tag, Space, Input, Typography, message, Popconfirm } from 'antd';
+import { Table, Button, Card, Tag, Space, Input, Select, Switch, Flex, Typography, message, Popconfirm } from 'antd';
 import { FileExcelOutlined, EyeOutlined, PlusOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
 import { fetchDatasets, deleteDataset } from '../api/datasetApi';
+import { useAuth } from '../auth/useAuth';
 import { DEFAULT_CATEGORY } from '../constants/category';
 import { formatDateTime, toTimestamp } from '../utils/formatDate';
 import PageTitle from '../components/PageTitle';
 
 const { Text } = Typography;
 
-const SEARCH_STYLE = { maxWidth: 360 };
+const SEARCH_STYLE = { width: 280 };
+const PROJECT_SELECT_STYLE = { width: 240 };
+const NO_PROJECT = '__none__';
+const PAGE_SIZE = 10;
 
 const DatasetListPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState('');
+  const [projectFilter, setProjectFilter] = useState(null);
+  const [mineOnly, setMineOnly] = useState(false);
+  const [page, setPage] = useState(1);
 
   const loadData = async () => {
     setLoading(true);
@@ -33,11 +41,30 @@ const DatasetListPage = () => {
     loadData();
   }, []);
 
+  const projectOptions = useMemo(() => {
+    const map = new Map();
+    datasets.forEach((d) => {
+      if (d.projectCode) map.set(d.projectCode, d.projectName || d.projectCode);
+    });
+    const options = [...map].map(([value, label]) => ({ value, label }));
+    return [{ value: NO_PROJECT, label: '프로젝트 미지정' }, ...options];
+  }, [datasets]);
+
   const filteredDatasets = useMemo(() => {
     const word = keyword.trim().toLowerCase();
-    if (!word) return datasets;
-    return datasets.filter((d) => (d.name || '').toLowerCase().includes(word));
-  }, [datasets, keyword]);
+    return datasets.filter((d) => {
+      if (word && !(d.name || '').toLowerCase().includes(word)) return false;
+      if (projectFilter === NO_PROJECT && d.projectCode) return false;
+      if (projectFilter && projectFilter !== NO_PROJECT && d.projectCode !== projectFilter) return false;
+      if (mineOnly && d.ownerId !== user?.empNo) return false;
+      return true;
+    });
+  }, [datasets, keyword, projectFilter, mineOnly, user]);
+
+  const changeFilter = (setter) => (value) => {
+    setter(value);
+    setPage(1);
+  };
 
   const handleDelete = async (id) => {
     try {
@@ -146,20 +173,35 @@ const DatasetListPage = () => {
       />
       <Card>
         <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-          <Input
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="데이터셋명 검색"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            style={SEARCH_STYLE}
-          />
+          <Flex gap="middle" align="center" wrap>
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="데이터셋명 검색"
+              value={keyword}
+              onChange={(e) => changeFilter(setKeyword)(e.target.value)}
+              style={SEARCH_STYLE}
+            />
+            <Select
+              allowClear
+              showSearch={{ optionFilterProp: 'label' }}
+              placeholder="프로젝트 선택"
+              options={projectOptions}
+              value={projectFilter}
+              onChange={(value) => changeFilter(setProjectFilter)(value ?? null)}
+              style={PROJECT_SELECT_STYLE}
+            />
+            <Space>
+              <Switch checked={mineOnly} onChange={changeFilter(setMineOnly)} />
+              <Text>내 것만</Text>
+            </Space>
+          </Flex>
           <Table
             columns={columns}
             dataSource={filteredDatasets}
             rowKey="id"
             loading={loading}
-            pagination={{ pageSize: 10 }}
+            pagination={{ pageSize: PAGE_SIZE, current: page, onChange: setPage }}
           />
         </Space>
       </Card>
