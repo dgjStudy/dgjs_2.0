@@ -8,3 +8,6 @@ notes/
 docs/DGJS2_overview.pdf
 docs/images/
 docs/DGJS2_interview_qna.pdf
+
+# 도커 배포 환경변수 (시크릿 포함)
+.env

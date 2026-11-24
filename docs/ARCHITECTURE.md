@@ -248,3 +248,16 @@ dgjs_2.0/
 
 ### 수동 생성
 컬럼 정의만으로 meta + column을 저장(행 0개)하고, 상세 페이지에서 행을 추가한다.
+
+## 배포 (Docker Compose)
+프로젝트 루트의 `docker-compose.yml` 하나로 서비스 3개를 띄운다. 설정값은 `.env`(git 무시, 예시는 `.env.example`)로 주입한다.
+
+```
+브라우저 ─ :80 ─▶ frontend(nginx) ─ /api ─▶ backend(Spring Boot :8080) ─▶ db(MySQL 8.0, 네임드 볼륨 db_data)
+```
+
+- `frontend`: `frontend/Dockerfile`이 Vite로 빌드한 정적 파일을 nginx로 서빙한다. `frontend/nginx.conf.template`이 SPA 새로고침 라우팅(`index.html` fallback), `/api` 프록시(같은 출처라 CORS 불필요), 업로드 50MB 허용을 처리한다. 외부에 공개되는 포트는 이 서비스(`HTTP_PORT`) 하나이며 DB와 백엔드는 외부에 열지 않는다.
+- `backend`: `backend/Dockerfile`이 Gradle `bootJar`로 빌드해 JRE 17 비루트 사용자로 실행한다. DB 접속은 `DB_URL`·`DB_USERNAME`·`DB_PASSWORD`, 초기 관리자는 `APP_SEED_*`, CORS는 `APP_CORS_ALLOWED_ORIGINS`, 프록시 뒤 헤더 신뢰는 `FORWARD_HEADERS_STRATEGY=framework`, 쿠키 secure는 `SESSION_COOKIE_SECURE`로 받는다. `db`가 healthy가 된 뒤 기동한다.
+- `db`: 앱 전용 계정(`dgjs`)과 `dgjs2_db`를 컨테이너 최초 기동 시 만들며, 테이블은 백엔드의 `ddl-auto: update`로 생성된다. 데이터는 `db_data` 볼륨에 남고 `docker compose down -v`를 하면 삭제된다.
+- Swagger(`/swagger-ui`, `/v3/api-docs`)는 인증 없이 열리는 경로라 nginx에서 기본 404로 막고, `SWAGGER_ENABLED=true`일 때만 백엔드로 전달한다.
+- 세션은 서버 메모리에 있어 백엔드를 재시작하면 모두 로그아웃된다.

@@ -70,6 +70,39 @@ cd frontend && npm run lint && npm run build
 
 `contextLoads` 테스트는 MySQL 연결이 필요해 위 명령에서 제외했습니다. 화면과 API를 직접 확인하는 절차는 [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md), 샘플 파일은 [docs/testdata](docs/testdata)에 있습니다.
 
+## 서버 배포 (Docker Compose)
+
+서버에는 Docker와 Docker Compose만 있으면 됩니다. JDK, Node, MySQL은 필요 없습니다.
+
+1. 저장소를 받습니다(또는 소스와 `docker-compose.yml`이 있는 폴더를 옮깁니다).
+2. `.env.example`을 `.env`로 복사하고 값을 채웁니다. 최소한 `MYSQL_ROOT_PASSWORD`, `DB_PASSWORD`, `ADMIN_PASSWORD`를 정합니다.
+3. 실행합니다.
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+4. 접속: `http://서버주소:HTTP_PORT`. 로그인 이메일은 `ADMIN_EMAIL`, 비밀번호는 `ADMIN_PASSWORD`입니다(비워 두면 `docker compose logs backend`에 한 번만 출력).
+5. 업데이트: 소스를 갱신한 뒤 같은 명령을 다시 실행합니다. DB 데이터는 `db_data` 볼륨에 남습니다.
+
+자주 쓰는 명령:
+
+```bash
+docker compose ps                  # 상태 확인
+docker compose logs -f backend     # 백엔드 로그
+docker compose down                # 중지 (데이터 유지)
+docker compose down -v             # 중지 + DB 데이터 삭제 (주의)
+```
+
+서버가 인터넷에 연결되지 않으면 개발 PC에서 빌드한 이미지를 파일로 옮길 수 있습니다.
+
+```bash
+docker save -o dgjs2-images.tar dgjs2-backend dgjs2-frontend mysql:8.0
+docker load -i dgjs2-images.tar
+```
+
+이 방식은 서버의 `docker-compose.yml`에서 `build:` 대신 `image:`를 쓰도록 바꿔야 합니다. 설정값의 의미는 `.env.example`의 주석과 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)의 배포 절을 참고하세요.
+
 ## 프로젝트 구조
 
 ```

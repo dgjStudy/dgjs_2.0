@@ -1,0 +1,7 @@
+node_modules
+dist
+.vite
+CLAUDE.md
+README.md
+Dockerfile
+.dockerignore

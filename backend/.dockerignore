@@ -1,0 +1,10 @@
+.gradle
+build
+bin
+.idea
+*.iml
+HELP.md
+CLAUDE.md
+Dockerfile
+.dockerignore
+src/main/resources/application-local.yml
