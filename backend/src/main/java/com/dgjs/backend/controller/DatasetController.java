@@ -63,6 +63,7 @@ public class DatasetController {
         SchemaPreviewDto.FinalUploadRequest request = objectMapper.readValue(metadataJson, SchemaPreviewDto.FinalUploadRequest.class);
         datasetService.validateUploadRequest(request);
         datasetService.checkProjectAttachable(user, request.getProjectCode());
+        datasetService.checkUploadNameAvailable(request, file.getOriginalFilename());
         String taskId = UUID.randomUUID().toString();
 
         // HTTP 요청 스레드가 종료되면 Tomcat 임시 파일이 삭제되므로, 비동기 처리용 임시 파일로 옮겨 경로만 넘김 (처리 후 비동기 쪽에서 삭제)

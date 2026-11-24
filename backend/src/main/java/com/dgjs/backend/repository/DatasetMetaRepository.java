@@ -13,6 +13,11 @@ import java.util.List;
 public interface DatasetMetaRepository extends JpaRepository<DatasetMeta, Long> {
     List<DatasetMeta> findAllByOrderByCreatedAtDesc();
 
+    // 중복 이름 검사용. 신규 생성은 제외 대상이 없으므로 excludeId에 존재할 수 없는 값을 넘김
+    boolean existsByNameAndProject_ProjectCodeAndIdNot(String name, String projectCode, Long excludeId);
+
+    boolean existsByNameAndProjectIsNullAndIdNot(String name, Long excludeId);
+
     @Query("select m from DatasetMeta m left join fetch m.project where m.status is null or m.status = 'READY' order by m.createdAt desc")
     List<DatasetMeta> findAllReadyOrderByCreatedAtDesc();
 

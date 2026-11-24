@@ -228,6 +228,34 @@ public class DatasetService {
         return value.toString().trim();
     }
 
+    private static final long NO_EXCLUDED_DATASET = -1L;
+
+    private String resolveUploadName(SchemaPreviewDto.FinalUploadRequest request, String originalFilename) {
+        String name = request.getName();
+        if (name == null || name.trim().isEmpty()) {
+            return originalFilename != null ? originalFilename : "무제 데이터셋";
+        }
+        return name.trim();
+    }
+
+    // 업로드는 비동기로 처리되어 실패가 진행률 화면에서야 보이므로, 같은 이름·프로젝트 중복은 요청 시점에 먼저 거부함
+    public void checkUploadNameAvailable(SchemaPreviewDto.FinalUploadRequest request, String originalFilename) {
+        requireUniqueName(resolveUploadName(request, originalFilename), request.getProjectCode(), NO_EXCLUDED_DATASET);
+    }
+
+    // 중복 기준은 같은 프로젝트 안의 같은 이름이며, 프로젝트 미지정끼리는 이름만 비교함
+    private void requireUniqueName(String name, String projectCode, Long excludeId) {
+        String code = projectCode == null || projectCode.isBlank() ? null : projectCode.trim();
+        boolean duplicated = code == null
+                ? metaRepository.existsByNameAndProjectIsNullAndIdNot(name, excludeId)
+                : metaRepository.existsByNameAndProject_ProjectCodeAndIdNot(name, code, excludeId);
+        if (duplicated) {
+            throw new IllegalArgumentException(code == null
+                    ? "프로젝트 미지정 데이터셋 중 같은 이름('" + name + "')이 이미 있습니다. 다른 이름을 사용해 주세요."
+                    : "같은 프로젝트에 같은 이름('" + name + "')의 데이터셋이 이미 있습니다. 다른 이름을 사용해 주세요.");
+        }
+    }
+
     @Async
     public void processAsyncUpload(String taskId, Path uploadedFile, String originalFilename,
             SchemaPreviewDto.FinalUploadRequest request, String ownerEmpNo) {
@@ -235,10 +263,7 @@ public class DatasetService {
         try {
             uploadTaskService.updateProgress(taskId, 10, "데이터 메타정보 생성 중...");
 
-            String datasetName = request.getName();
-            if (datasetName == null || datasetName.trim().isEmpty()) {
-                datasetName = originalFilename != null ? originalFilename : "무제 데이터셋";
-            }
+            String datasetName = resolveUploadName(request, originalFilename);
 
             DatasetMeta meta = DatasetMeta.builder()
                     .name(datasetName)
@@ -477,6 +502,7 @@ public class DatasetService {
         }
 
         Project project = resolveAttachableProject(user, request.getProjectCode());
+        requireUniqueName(request.getName().trim(), request.getProjectCode(), NO_EXCLUDED_DATASET);
 
         DatasetMeta meta = DatasetMeta.builder()
                 .name(request.getName().trim())
@@ -656,6 +682,8 @@ public class DatasetService {
         DatasetMeta meta = metaRepository.findById(id)
                 .orElseThrow(() -> datasetNotFound(id));
         accessPolicy.requireEdit(user, meta);
+        String oldName = meta.getName();
+        String oldProjectCode = DatasetAccessPolicy.projectCodeOf(meta);
         if (request.getName() != null && !request.getName().trim().isEmpty()) {
             meta.setName(request.getName().trim());
         }
@@ -666,6 +694,11 @@ public class DatasetService {
             meta.setCategory(request.getCategory().trim());
         }
         changeProjectIfRequested(meta, request.getProjectCode(), user);
+        // 이름이나 프로젝트가 바뀐 경우에만 검사해, 이미 중복된 기존 데이터의 설명 수정은 막지 않음
+        if (!Objects.equals(oldName, meta.getName())
+                || !Objects.equals(oldProjectCode, DatasetAccessPolicy.projectCodeOf(meta))) {
+            requireUniqueName(meta.getName(), DatasetAccessPolicy.projectCodeOf(meta), meta.getId());
+        }
         metaRepository.save(meta);
     }
 
