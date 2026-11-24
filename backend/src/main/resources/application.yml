@@ -1,11 +1,15 @@
 server:
   port: 8080
+  # 리버스 프록시(nginx) 뒤에서 X-Forwarded-* 헤더를 신뢰하려면 FORWARD_HEADERS_STRATEGY=framework 로 지정
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:none}
   servlet:
     session:
       timeout: 30m
       cookie:
         http-only: true
         same-site: lax
+        # HTTPS로 서비스할 때만 SESSION_COOKIE_SECURE=true (HTTP에서 true면 로그인 쿠키가 전달되지 않음)
+        secure: ${SESSION_COOKIE_SECURE:false}
 
 spring:
   application:

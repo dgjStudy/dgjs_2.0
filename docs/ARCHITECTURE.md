@@ -15,7 +15,7 @@ dgjs_2.0/
 │       │   ├─ AsyncConfig        @EnableAsync (비동기 적재)
 │       │   ├─ SchedulingConfig   @EnableScheduling (종료된 작업 정리)
 │       │   ├─ GlobalExceptionHandler  @RestControllerAdvice, 오류 응답 통일
-│       │   ├─ WebConfig          CORS 허용 (localhost:5173, 3000)
+│       │   ├─ WebConfig          CORS 허용 (기본 localhost:5173, 3000 / app.cors.allowed-origins 로 변경)
 │       │   ├─ OpenApiConfig      Swagger 문서 메타정보
 │       │   ├─ PasswordConfig     BCrypt PasswordEncoder 빈 (spring-security-crypto, 전체 Spring Security는 A-2에서 도입)
 │       │   ├─ AdminSeedRunner    서버 시작 시 사원이 없으면 초기 부서·관리자 생성 (app.seed.* 설정, 실행 순서 1)
@@ -181,7 +181,7 @@ dgjs_2.0/
 
 ### 파일 적재 (엑셀/CSV)
 1. **미리보기** — 파일 선택 시 `POST /api/preview`. 헤더로 `col_i` 키를 만들고, 상위 10행을 읽어 열마다 타입을 추정(전부 숫자면 NUMBER, 아니면 STRING)하고, 빈 헤더·빈 파일 등 구조 문제를 검증한다. 중복 컬럼명은 Step1에서 수정 가능하므로 막지 않고, 프론트가 현재 스키마 기준으로 실시간 검증하며 서버도 `POST /api/upload-async`에서 컬럼명(빈 값·중복)·컬럼 키를 재검증한다(400). CSV는 Apache Commons CSV로 파싱하며(따옴표 안 줄바꿈·`""` 이스케이프 지원) 파일을 스트림으로 한 번 훑어 UTF-8 엄격 검사에 실패하면 MS949로 읽고 BOM은 제거한다. 엑셀은 임시 파일에 저장한 뒤 `SpreadsheetReader`로 행을 앞에서부터 읽으며, 헤더와 샘플 10행을 읽으면 바로 멈춘다(큰 파일도 미리보기가 빠르고 메모리를 거의 쓰지 않음). 읽기 실패(깨진 파일, 암호화 등)는 400이다.
-2. **스키마 확정** — 사용자가 컬럼명/타입을 수정한 뒤 `POST /api/upload-async` (file + metadata JSON).
+2. **스키마 확정** — 사용자가 컬럼명/타입을 수정한 뒤 `POST /api/upload-async` (file + metadata JSON). 같은 프로젝트에 같은 이름의 데이터셋이 있으면(프로젝트 미지정끼리는 이름만 비교) 비동기 처리를 시작하기 전에 400으로 거부한다. 수동 스키마 생성(`POST /api/datasets/manual`)과 메타 수정(`PUT /api/datasets/{id}`)에서 이름이나 프로젝트를 바꿀 때도 같은 검사를 하며, 이름·프로젝트가 그대로인 수정은 검사하지 않는다. 이름 비교는 DB 기본 collation을 따르므로 대소문자를 구분하지 않고, 유니크 제약이 없어 동시에 같은 이름으로 요청하면 둘 다 통과할 수 있다.
 3. **비동기 적재** — 컨트롤러가 파일을 임시 파일로 저장하고(요청이 끝나도 남도록), `UploadTaskService.initTask`로 작업을 먼저 등록한 뒤 임시 파일 경로를 `@Async` 메서드에 넘기고 즉시 taskId를 응답한다. 백그라운드 스레드가 meta(status=PROCESSING) → column → 행(500건 단위, `JdbcTemplate.batchUpdate`)을 파일에서 스트리밍으로 읽어 저장하며 진행률을 기록하고, 완료 시 status를 READY로 바꾼다. 진행률은 엑셀 시트에 선언된 마지막 행 번호가 있으면 그 비율로, 없으면 처리 행 수에 따라 95%에 천천히 가까워지게 표시한다. 처리가 끝나면(성공·실패 모두) 임시 파일을 삭제한다. 실패하면 저장된 meta/column/row를 삭제한다(삭제마저 실패하면 FAILED로 남김). 사용자 입력 문제(CSV 따옴표 오류, 엑셀을 읽을 수 없음)는 원인 문구를, 그 밖의 오류는 일반 문구를 진행률 메시지로 남긴다. 목록·상세 조회는 READY(또는 NULL)만 노출한다.
 4. **진행률 폴링** — 프론트가 1초마다 `GET /api/tasks/{taskId}/progress`를 호출해 진행률을 표시하고, COMPLETED면 상세 페이지로 이동한다. 완료·실패한 작업은 10분 뒤 메모리에서 제거되며(1분 주기), 이후 조회하면 "존재하지 않는 작업 ID"(FAILED)로 응답한다.
 
